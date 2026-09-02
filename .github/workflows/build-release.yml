@@ -132,6 +132,13 @@ jobs:
           sudo chown -R runner:runner ${{ github.workspace }}
           sudo sysctl -w vm.drop_caches=3
 
+      - name: 📊 修改后磁盘空间报告
+        run: |
+          echo -e "\n\e[1;32mMemory:\e[0m"
+          sudo free -h
+          echo -e "\e[1;32mAvailable Storage:\e[0m"
+          sudo df -Th
+
       - name: 🛠️ 配置构建系统环境
         run: |
           echo "::group::📦 安装 OpenWrt 编译依赖"
@@ -172,3 +179,20 @@ jobs:
           rm -rf clang-*-x86_64-unknown-linux-gnu.tar.xz
           clang --version
           sudo apt-get clean
+
+      - name: ⬇️ 克隆 OpenWrt 源码
+        run: |
+          git clone --depth=1 -b openwrt-25.12 https://github.com/openwrt/openwrt.git
+          sed -i 's|https://git.openwrt.org/feed/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
+          sed -i 's|https://git.openwrt.org/project/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
+          cp -f scripts/diy-part1.sh openwrt/diy-part1.sh
+          chmod +x ./diy-part1.sh && ./diy-part1.sh
+
+      - name: 🔄 更新并安装 Feeds
+        working-directory: ./openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          cp -f ../scripts/diy-part2.sh ./diy-part2.sh
+          chmod +x ./diy-part2.sh && ./diy-part2.sh
+          
