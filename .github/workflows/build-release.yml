@@ -38,7 +38,7 @@ jobs:
     # 定义该任务中需要依次执行的具体步骤（Steps）列表
     steps:
       # 步骤的名称 "检出代码"
-      - name: 检出代码
+      - name: 📥 检出代码
         # 使用 GitHub 官方提供的 checkout 动作（v7.0.1 版本）
         # 其主要作用是将当前仓库的代码下载到运行器（Runner）的工作目录中
         uses: actions/checkout@v7.0.1
@@ -48,34 +48,42 @@ jobs:
           # 出于安全最佳实践，如果后续步骤不需要向仓库推送（git push）代码，建议关闭以防凭据泄露
           persist-credentials: false
 
-      - name: Show system
+      - name: 🖥️ 显示系统信息
         run: |
-          # 1. CPU 信息
+          # 1. 采集系统参数
           CPU_MODEL=$(grep 'model name' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')
           CPU_FREQ=$(grep 'cpu MHz' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')
           CPU_CORES=$(grep processor /proc/cpuinfo | wc -l)
-          echo -e "\n\e[1;32m[💻 计算核心 (CPU)]\e[0m"
-          echo -e "  • 型号规格 : \e[1m${CPU_MODEL:-未知}\e[0m"
-          echo -e "  • 核心频率 : \e[1m${CPU_FREQ:-未知} MHz\e[0m"
-          echo -e "  • 线程核心 : \e[1m${CPU_CORES} Cores\e[0m"
+          MEM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
+          MEM_FREE=$(free -h | awk '/Mem:/ {print $4}')
+          DISK_AVAIL=$(df -h / | awk 'NR==2 {print $4}')
+          DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
+          OS_NAME=$(lsb_release -d 2>/dev/null | awk -F ':' '{print $2}' | xargs || cat /etc/os-release | grep PRETTY_NAME | cut -d '=' -f 2 | tr -d '"')
+          KERNEL_VER=$(uname -r)
 
-          # 2. 内存信息
+          # 2. 打印现代化卡片式诊断看板
+          echo -e "\n\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;33m          🚀 运行环境与系统规格诊断报告 (SYSTEM DIAGNOSTICS)       \e[0m"
+          echo -e "\e[1;36m=================================================================\e[0m"
+
+          echo -e "\e[1;32m[💻 计算核心 (CPU)]\e[0m"
+          echo -e "  • 处理器型号 : \e[1m${CPU_MODEL:-未知}\e[0m"
+          echo -e "  • 核心与频率 : \e[1m${CPU_CORES} 线程 / 核心\e[0m (${CPU_FREQ:-未知} MHz)"
+
           echo -e "\n\e[1;32m[🧠 运行内存 (RAM)]\e[0m"
-          free -h | sed 's/^/  /'
+          echo -e "  • 总容量 / 可用: \e[1m${MEM_TOTAL}\e[0m / 🟢 \e[1m${MEM_FREE}\e[0m"
 
-          # 3. 存储信息
-          echo -e "\n\e[1;32m[💾 存储空间 (Storage)]\e[0m"
-          df -Th / /mnt 2>/dev/null | sed 's/^/  /'
+          echo -e "\n\e[1;32m[💾 根目录存储 (Storage)]\e[0m"
+          echo -e "  • 可用 / 总计  : \e[1m${DISK_AVAIL}\e[0m / 📁 \e[1m${DISK_TOTAL}\e[0m"
 
-          # 4. 系统版本
-          echo -e "\n\e[1;32m[🐧 操作系统 (System)]\e[0m"
-          if command -v lsb_release &> /dev/null; then
-              lsb_release -a 2>/dev/null | sed 's/^/  /'
-          else
-              cat /etc/os-release | sed 's/^/  /'
-          fi
+          echo -e "\n\e[1;32m[🐧 操作系统与内核 (System & Kernel)]\e[0m"
+          echo -e "  • 发行版本     : ${OS_NAME:-Ubuntu 24.04 LTS}"
+          echo -e "  • Linux 内核   : \e[1m${KERNEL_VER}\e[0m"
 
-          # 5. 内核版本
-          echo -e "\n\e[1;32m[⚙️ 内核版本 (Kernel)]\e[0m"
-          echo -e "  • 版本号   : \e[1m$(uname -r)\e[0m"
-          echo -e "  • 完整架构 : \e[1m$(uname -s -m)\e[0m"
+          echo -e "\n\e[1;35m-----------------------------------------------------------------\e[0m"
+          echo -e "\e[1;35m[📊 实时内存占用详情 (free -h)]\e[0m"
+          free -h | sed 's/^/  │ /'
+
+          echo -e "\n\e[1;35m[📊 存储设备详情 (df -Th)]\e[0m"
+          df -Th / /mnt 2>/dev/null | awk '{print $1, $2, $3, $4, $5, $6}' | column -t | sed 's/^/  │ /'
+          echo -e "\e[1;36m=================================================================\e[0m\n"
