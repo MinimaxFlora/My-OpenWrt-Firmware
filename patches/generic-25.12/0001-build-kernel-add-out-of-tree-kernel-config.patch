@@ -1,0 +1,95 @@
+From 8a9c3f3c328a819faaa3f97638e3ab464c2db6aa Mon Sep 17 00:00:00 2001
+From: MinimaxFlora <zj18139624826@gmail.com>
+Date: Thu, 3 Sep 2026 01:25:39 +0800
+Subject: [PATCH] build: kernel: add out-of-tree kernel config
+
+Signed-off-by: MinimaxFlora <zj18139624826@gmail.com>
+---
+ config/Config-devel.in     |  7 +++++
+ include/kernel-defaults.mk | 52 ++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 59 insertions(+)
+
+diff --git a/config/Config-devel.in b/config/Config-devel.in
+index 3fe78f3..ed771f9 100644
+--- a/config/Config-devel.in
++++ b/config/Config-devel.in
+@@ -149,6 +149,13 @@ menuconfig DEVEL
+ 		default "-falign-functions=32" if TARGET_bcm53xx
+ 		default ""
+ 
++	config KERNEL_LRNG
++		bool "Kernel LRNG" if DEVEL
++		help
++		  If enabled, provides a different approach to /dev/random
++		  which is called Linux Random Number Generator (LRNG) to collect
++		  entropy within the Linux kernel.
++
+ 	config EXTERNAL_KERNEL_TREE
+ 		string "Use external kernel tree" if DEVEL
+ 		default ""
+diff --git a/include/kernel-defaults.mk b/include/kernel-defaults.mk
+index bdfdaaa..fa8bce4 100644
+--- a/include/kernel-defaults.mk
++++ b/include/kernel-defaults.mk
+@@ -107,6 +107,58 @@ define Kernel/SetNoInitramfs
+ 	echo 'CONFIG_INITRAMFS_SOURCE=""' >> $(LINUX_DIR)/.config.set
+ 	echo '# CONFIG_INITRAMFS_FORCE is not set' >> $(LINUX_DIR)/.config.set
+ 	echo "# CONFIG_INITRAMFS_PRESERVE_MTIME is not set" >> $(LINUX_DIR)/.config.set
++# LRNG
++ifeq ($(call qstrip,$(CONFIG_KERNEL_LRNG)),y)
++	echo 'CONFIG_LRNG=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_AUTO_SELECTED=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_COLLECTION_SIZE_1024=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_CONTINUOUS_COMPRESSION_ENABLED=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_CPU=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_CPU_ENTROPY_RATE=8' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_DEV_IF=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_DFLT_DRNG_CHACHA20=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_IRQ=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_IRQ_DFLT_TIMER_ES=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_IRQ_ENTROPY_RATE=256' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_JENT=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_JENT_ENTROPY_BLOCKS=128' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_JENT_ENTROPY_BLOCKS_NO_128=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_JENT_ENTROPY_RATE=16' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_KCAPI_IF=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_RUNTIME_ES_CONFIG=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_SCHED=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_SCHED_ENTROPY_RATE=4294967295' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_SWITCH_DRNG=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_SWITCH_HASH=y' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_LRNG_SWITCHABLE_CONTINUOUS_COMPRESSION=y' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_AIS2031_NTG1_SEEDING_STRATEGY is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_COLLECTION_SIZE_2048 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_COLLECTION_SIZE_256 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_COLLECTION_SIZE_4096 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_COLLECTION_SIZE_512 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_COLLECTION_SIZE_8192 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_CONTINUOUS_COMPRESSION_DISABLED is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_DFLT_DRNG_DRBG is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_DFLT_DRNG_KCAPI is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_HASH_KCAPI is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_HEALTH_TESTS is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_HWRAND_IF is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_JENT_ENTROPY_BLOCKS_DISABLED is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_JENT_ENTROPY_BLOCKS_NO_1024 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_JENT_ENTROPY_BLOCKS_NO_256 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_JENT_ENTROPY_BLOCKS_NO_32 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_JENT_ENTROPY_BLOCKS_NO_512 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_JENT_ENTROPY_BLOCKS_NO_64 is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_SCHED_DFLT_TIMER_ES is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_SELFTEST is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_SWITCH_DRBG is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_SWITCH_DRNG_KCAPI is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_LRNG_TESTING_MENU is not set' >> $(LINUX_DIR)/.config.set
++	echo '# CONFIG_RANDOM_DEFAULT_IMPL is not set' >> $(LINUX_DIR)/.config.set
++else
++	echo '# CONFIG_LRNG is not set' >> $(LINUX_DIR)/.config.set
++	echo 'CONFIG_RANDOM_DEFAULT_IMPL=y' >> $(LINUX_DIR)/.config.set
++endif
+ endef
+ 
+ define Kernel/Configure/Default
+-- 
+2.43.0
+
