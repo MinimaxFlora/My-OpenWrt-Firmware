@@ -196,4 +196,32 @@ jobs:
           ./scripts/feeds install -a
           cp -f ../diy-part2.sh ./diy-part2.sh
           chmod +x ./diy-part2.sh && ./diy-part2.sh
+
+      - name: ⚙️ 加载自定义配置
+        run: |
+          cd openwrt
+          cp $GITHUB_WORKSPACE/.config .config
+          cp -rf $GITHUB_WORKSPACE/files ./
+          make defconfig
+          grep -E "^CONFIG_TARGET" .config
           
+      - name: 🗃️ 编译缓存
+        uses: HiGarfield/cachewrtbuild@main
+        with:
+          mixkey: x86
+          prefix: ${{ github.workspace }}/openwrt
+
+      - name: 📚 下载软件包
+        run: |
+          cd openwrt
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: 🔨 编译固件
+        id: compile
+        run: |
+          cd openwrt
+          echo "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
