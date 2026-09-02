@@ -48,39 +48,36 @@ jobs:
           # 出于安全最佳实践，如果后续步骤不需要向仓库推送（git push）代码，建议关闭以防凭据泄露
           persist-credentials: false
 
-      # 定义一个名为 "生成系统摘要" 的步骤，用于生成任务执行时的环境和系统摘要
       - name: 生成系统摘要
-        # 使用多行 Bash 脚本，将 Markdown 格式的系统硬件和环境信息写入 GitHub Actions 的 $GITHUB_STEP_SUMMARY 中
-        # 这样可以在 GitHub 网页端的 Actions 运行详情页面直接看到排版美观的硬件状态统计表格
         run: |
-          # 1. 写入摘要大标题
+          # 1. 先将各项系统数据提取并保存到 Bash 变量中，避免复杂的转义冲突
+          CPU_INFO=$(lscpu | grep 'Model name' | cut -f 2 -d ':' | xargs)
+          CPU_CORES=$(nproc)
+          MEM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
+          MEM_FREE=$(free -h | awk '/Mem:/ {print $4}')
+          DISK_AVAIL=$(df -h / | awk 'NR==2 {print $4}')
+          DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
+          OS_KERNEL=$(uname -r)
+
+          # 2. 写入摘要大标题及提示块
           echo "## 🚀 GitHub Actions Runner Environment" >> $GITHUB_STEP_SUMMARY
-          # 写入状态提示块（Callout 样式）
           echo "> **Status:** ✅ **System information collected successfully**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # 2. 写入系统规格说明表格的表头及对齐方式
+          # 3. 写入系统规格说明表格的表头及对齐方式
           echo "### 📊 System Specifications" >> $GITHUB_STEP_SUMMARY
           echo "| Category | Item | Details |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
           
-          # 3. 写入构建运行环境类型
+          # 4. 写入各项具体指标数据
           echo "| **Build Environment** | Runtime | GitHub Actions Hosted Runner |" >> $GITHUB_STEP_SUMMARY
-          
-          # 4. 获取并写入 CPU 型号与逻辑核心数（通过 lscpu 提取 Model name，通过 nproc 获取核心数）
-          echo "| **Processor (CPU)** | Model / Cores | $(lscpu | grep 'Model name' | cut -f 2 -d ':' | xargs) / $(nproc) Cores |" >> $GITHUB_STEP_SUMMARY
-          
-          # 5. 获取并写入内存（RAM）的总大小与剩余空间（通过 free -h 解析第二列与第四列）
-          echo "| **Memory (RAM)** | Total / Free | $(free -h | awk '/Mem:/ {print \$2 \" / \" \$4}') |" >> $GITHUB_STEP_SUMMARY
-          
-          # 6. 获取并写入根分区（/）磁盘空间情况（通过 df -h / 解析可用空间与总容量）
-          echo "| **Storage (Disk)** | Root Partition | $(df -h / | awk 'NR==2 {print \$4 \" available out of \" \$2}') |" >> $GITHUB_STEP_SUMMARY
-          
-          # 7. 写入操作系统及内核版本信息
+          echo "| **Processor (CPU)** | Model / Cores | ${CPU_INFO} / ${CPU_CORES} Cores |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Memory (RAM)** | Total / Free | ${MEM_TOTAL} / ${MEM_FREE} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Storage (Disk)** | Root Partition | ${DISK_AVAIL} available out of ${DISK_TOTAL} |" >> $GITHUB_STEP_SUMMARY
           echo "| **Operating System** | OS | Ubuntu 24.04 LTS |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Kernel** | Version | $(uname -r) |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Kernel** | Version | ${OS_KERNEL} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # 8. 写入底部的分隔线和自动化生成提示尾注
+          # 5. 写入底部的分隔线和自动化生成提示尾注
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "*💡 Generated automatically by GitHub Actions workflow.*" >> $GITHUB_STEP_SUMMARY
