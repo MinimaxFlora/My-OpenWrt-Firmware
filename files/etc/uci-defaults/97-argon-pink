@@ -1,0 +1,16 @@
+#!/bin/sh
+
+# 禁用在线必应壁纸，以便正确加载本地 background/ 目录下的自定义壁纸
+uci -q set argon.global.online_wallpaper='none'
+
+# 核心外观配置：启用亮色模式，设定粉色系主色调并微调透明度以确保文字可读性
+uci -q set argon.global.mode='light'
+uci -q set argon.global.primary='#e879a8'
+uci -q set argon.global.dark_primary='#c9719f'
+uci -q set argon.global.transparency='0.4'
+uci -q set argon.global.transparency_dark='0.45'
+
+# 保存 Argon 主题的 UCI 配置更改
+uci -q commit argon
+
+exit 0
