@@ -1,0 +1,86 @@
+name: Build Releases
+
+on:
+  # 允许在 GitHub 仓库的 Actions 页面手动触发此工作流（会显示一个 "Run workflow" 按钮）
+  workflow_dispatch:
+  
+  # 允许通过外部 API 请求（Repository Dispatch 事件）来触发此工作流
+  repository_dispatch:
+    # 限制只有当接收到的事件类型（event type）为 upstream-update 时，才会触发该工作流
+    types: [upstream-update]
+
+jobs:
+  # 定义工作流中的任务列表，这里定义了一个名为 "build" 的任务
+  build:
+    # 指定该任务运行所在的虚拟机操作系统环境为 Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    
+    # 条件判断：仅当仓库所有者（owner）的 ID 与触发此事件的发送者（sender）ID 相同时，才执行此任务
+    # （常用于安全控制，确保只有仓库所有者自己或受信任的账号能触发特定操作）
+    if: ${{ github.event.repository.owner.id == github.event.sender.id }}
+    
+    # 设置任务的最大运行超时时间为 360 分钟（6小时），超时后会自动终止
+    timeout-minutes: 360
+    
+    # 设置此任务中所有运行步骤（run）的默认属性
+    defaults:
+      run:
+        # 指定默认使用的命令行脚本解释器为 Bash
+        shell: bash
+        
+    # 设置该任务在运行期间对 GitHub 仓库内置令牌（GITHUB_TOKEN）的权限控制
+    permissions:
+      # 对仓库代码内容授予“只读”权限
+      contents: read
+      # 对 GitHub Actions 相关信息授予“只读”权限
+      actions: read
+      
+    # 定义该任务中需要依次执行的具体步骤（Steps）列表
+    steps:
+      # 步骤的名称 "检出代码"
+      - name: 检出代码
+        # 使用 GitHub 官方提供的 checkout 动作（v7.0.1 版本）
+        # 其主要作用是将当前仓库的代码下载到运行器（Runner）的工作目录中
+        uses: actions/checkout@v7.0.1
+        # 传递给该动作的配置参数（输入项）
+        with:
+          # 设置为 false，表示不将凭据（如 GITHUB_TOKEN）持久化保存在本地 Git 仓库配置中
+          # 出于安全最佳实践，如果后续步骤不需要向仓库推送（git push）代码，建议关闭以防凭据泄露
+          persist-credentials: false
+
+      # 定义一个名为 "生成系统摘要" 的步骤，用于生成任务执行时的环境和系统摘要
+      - name: 生成系统摘要
+        # 使用多行 Bash 脚本，将 Markdown 格式的系统硬件和环境信息写入 GitHub Actions 的 $GITHUB_STEP_SUMMARY 中
+        # 这样可以在 GitHub 网页端的 Actions 运行详情页面直接看到排版美观的硬件状态统计表格
+        run: |
+          # 1. 写入摘要大标题
+          echo "## 🚀 GitHub Actions Runner Environment" >> $GITHUB_STEP_SUMMARY
+          # 写入状态提示块（Callout 样式）
+          echo "> **Status:** ✅ **System information collected successfully**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # 2. 写入系统规格说明表格的表头及对齐方式
+          echo "### 📊 System Specifications" >> $GITHUB_STEP_SUMMARY
+          echo "| Category | Item | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          
+          # 3. 写入构建运行环境类型
+          echo "| **Build Environment** | Runtime | GitHub Actions Hosted Runner |" >> $GITHUB_STEP_SUMMARY
+          
+          # 4. 获取并写入 CPU 型号与逻辑核心数（通过 lscpu 提取 Model name，通过 nproc 获取核心数）
+          echo "| **Processor (CPU)** | Model / Cores | $(lscpu | grep 'Model name' | cut -f 2 -d ':' | xargs) / $(nproc) Cores |" >> $GITHUB_STEP_SUMMARY
+          
+          # 5. 获取并写入内存（RAM）的总大小与剩余空间（通过 free -h 解析第二列与第四列）
+          echo "| **Memory (RAM)** | Total / Free | $(free -h | awk '/Mem:/ {print \$2 \" / \" \$4}') |" >> $GITHUB_STEP_SUMMARY
+          
+          # 6. 获取并写入根分区（/）磁盘空间情况（通过 df -h / 解析可用空间与总容量）
+          echo "| **Storage (Disk)** | Root Partition | $(df -h / | awk 'NR==2 {print \$4 \" available out of \" \$2}') |" >> $GITHUB_STEP_SUMMARY
+          
+          # 7. 写入操作系统及内核版本信息
+          echo "| **Operating System** | OS | Ubuntu 24.04 LTS |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Kernel** | Version | $(uname -r) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # 8. 写入底部的分隔线和自动化生成提示尾注
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*💡 Generated automatically by GitHub Actions workflow.*" >> $GITHUB_STEP_SUMMARY
