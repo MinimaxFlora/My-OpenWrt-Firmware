@@ -17,14 +17,34 @@ echo "⚙️ 正在执行 feeds 更新后的自定义调整..."
 
 # 2. 预留区域：在此处编写更新后的调整逻辑 (按需取消注释并修改)
 # ------------------------------------------------------------------------------
-# 示例 A: 替换或删除冲突的软件包
-# rm -rf package/lean/some-conflict-package
+# 替换或删除冲突的软件包
+rm -rf feeds/packages/lang/golang
 
 # 示例 B: 修改默认主题配置
 # sed -i 's/luci-theme-bootstrap/luci-theme-nebula/g' feeds/luci/collections/luci/Makefile
 # ------------------------------------------------------------------------------
 
-# xl2tpd
+# Go 1.27
+git clone https://github.com/sbwml/packages_lang_golang -b 27.x feeds/packages/lang/golang
+# ------------------------------------------------------------------------------
+
+# V2ray 地理数据
+git clone --depth=1 https://github.com/sbwml/v2ray-geodata package/new/v2ray-geodata
+# ------------------------------------------------------------------------------
+
+# Mosdns 转发器
+git clone --depth=1 -b v5 https://github.com/sbwml/luci-app-mosdns package/new/luci-app-mosdns
+# ------------------------------------------------------------------------------
+
+# OpenList 网盘
+git clone --depth=1 -b main https://github.com/sbwml/luci-app-openlist2 package/new/luci-app-openlist2
+
+# Argon 主题
+git clone --depth=1 -b master https://github.com/jerrykuku/luci-theme-argon package/new/luci-theme-argon
+git clone --depth=1 -b master https://github.com/jerrykuku/luci-app-argon-config package/new/luci-app-argon-config
+# ------------------------------------------------------------------------------
+
+# XL2TPD 隧道
 sed -i '/ifneq (0,0)/i TARGET_CFLAGS += -std=gnu17\n' feeds/packages/net/xl2tpd/Makefile
 # ------------------------------------------------------------------------------
 
