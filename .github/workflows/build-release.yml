@@ -185,14 +185,14 @@ jobs:
           git clone --depth=1 -b openwrt-25.12 https://github.com/openwrt/openwrt.git
           sed -i 's|https://git.openwrt.org/feed/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
           sed -i 's|https://git.openwrt.org/project/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
-          cp -f scripts/diy-part1.sh openwrt/diy-part1.sh
-          chmod +x ./diy-part1.sh && ./diy-part1.sh
+          cp -f diy-part1.sh openwrt/diy-part1.sh
+          chmod +x openwrt/diy-part1.sh && ./openwrt/diy-part1.sh
 
       - name: 🔄 更新并安装 Feeds
         working-directory: ./openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          cp -f ../scripts/diy-part2.sh ./diy-part2.sh
+          cp -f ../diy-part2.sh ./diy-part2.sh
           chmod +x ./diy-part2.sh && ./diy-part2.sh
           
