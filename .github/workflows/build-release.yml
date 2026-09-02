@@ -230,3 +230,84 @@ jobs:
           echo "$(nproc) thread compile"
           make -j$(nproc) || make -j1 V=s
           echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 📦 整理固件与生成 Release 说明
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          
+          FIRMWARE_DIR="${GITHUB_WORKSPACE}/firmware_out"
+          mkdir -p "$FIRMWARE_DIR"
+          
+          RELEASE_TAG="EternalWrt_$(date +'%Y.%m.%d-%H%M')"
+          BUILD_DATE=$(date +"%Y-%m-%d %H:%M:%S")
+          
+          sha256sum * > sha256sums.txt
+
+          cat <<EOF > release_notes.md
+          # 🚀 EternalWrt 固件发布报告
+
+          | 配置项目 | 详细信息 |
+          | :--- | :--- |
+          | 🕒 **编译时间** | \`${BUILD_DATE}\` |
+          | 🏷️ **发布标签** | \`${RELEASE_TAG}\` |
+          | ⚡ **默认 IP** | \`192.168.1.1\` |
+          | 🔑 **默认密码** | \`none (无密码)\` |
+
+          ### 📦 包含固件文件与 SHA256 校验码
+          \`\`\`text
+          $(cat sha256sums.txt)
+          \`\`\`
+
+          > 💡 **提示**：建议刷机前核对文件 SHA256 校验码，确保固件传输完整无损。
+          EOF
+
+          # 将 Tag 写入独立文本文件供后续 Release 步骤读取
+          echo "$RELEASE_TAG" > release_tag.txt
+
+          cp -rf * "$FIRMWARE_DIR/"
+
+          echo -e "\n\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;33m          📦 固件产物整理完毕与发布准备报告 (RELEASE SUMMARY)      \e[0m"
+          echo -e "\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;32m[📁 固件输出路径]\e[0m : $FIRMWARE_DIR"
+          echo -e "\e[1;32m[🏷️ 发布 Tag 标签]\e[0m : \e[1m${RELEASE_TAG}\e[0m"
+          echo -e "\n\e[1;35m[📄 校验文件列表 (sha256sums)]\e[0m"
+          cat sha256sums.txt | sed 's/^/  │ /'
+          echo -e "\e[1;36m=================================================================\e[0m\n"
+
+      - name: 📤 上传固件 Artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: EternalWrt_Firmware
+          path: ./firmware_out/*
+
+  release:
+    name: 🚀 发布 GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    if: needs.build.result == 'success'
+    
+    steps:
+      - name: 📥 下载固件 Artifact
+        uses: actions/download-artifact@main
+        with:
+          name: EternalWrt_Firmware
+          path: ./firmware
+
+      - name: 🚀 发布到 Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd ./firmware
+          
+          # 从 txt 读取 Tag 并清理临时文件
+          RELEASE_TAG=$(cat release_tag.txt)
+          rm -f release_tag.txt
+          
+          # 使用 GitHub 官方 CLI 发布 Releases
+          gh release create "$RELEASE_TAG" ./* \
+            --title "$RELEASE_TAG" \
+            --notes-file release_notes.md
