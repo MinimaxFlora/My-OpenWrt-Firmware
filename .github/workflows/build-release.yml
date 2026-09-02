@@ -197,13 +197,18 @@ jobs:
           cp -f ../diy-part2.sh ./diy-part2.sh
           chmod +x ./diy-part2.sh && ./diy-part2.sh
 
-      - name: ⚙️ 加载自定义配置
+      - name: 📂 加载补丁文件
+        working-directory: ./openwrt
         run: |
-          cd openwrt
+          cp -rf $GITHUB_WORKSPACE/patches/BBRv3/* ./target/linux/generic/backport-6.12/
+          cp -rf $GITHUB_WORKSPACE/patches/LRNG/* ./target/linux/generic/hack-6.12/   
+          
+      - name: ⚙️ 加载自定义配置
+        working-directory: ./openwrt
+        run: |
           cp $GITHUB_WORKSPACE/.config .config
           cp -rf $GITHUB_WORKSPACE/files ./
           make defconfig
-          grep -E "^CONFIG_TARGET" .config
           
       - name: 🗃️ 编译缓存
         uses: HiGarfield/cachewrtbuild@main
