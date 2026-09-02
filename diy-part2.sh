@@ -24,4 +24,8 @@ echo "⚙️ 正在执行 feeds 更新后的自定义调整..."
 # sed -i 's/luci-theme-bootstrap/luci-theme-nebula/g' feeds/luci/collections/luci/Makefile
 # ------------------------------------------------------------------------------
 
+# xl2tpd
+sed -i '/ifneq (0,0)/i TARGET_CFLAGS += -std=gnu17\n' feeds/packages/net/xl2tpd/Makefile
+# ------------------------------------------------------------------------------
+
 echo "✨ Feed 更新后的各项调整已全部完成！"
