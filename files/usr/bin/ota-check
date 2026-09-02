@@ -1,0 +1,129 @@
+#!/bin/sh
+# =====================================================================
+# My-OpenWrt-Firmware (x86_64) OTA 自动升级脚本
+# 项目地址: https://github.com/MinimaxFlora/My-OpenWrt-Firmware
+# 依赖: /etc/config/ota + manifest.json (version / image / sha256)
+# =====================================================================
+
+# 1. 终端 ANSI 颜色格式化（仅在终端交互时显示颜色）
+if [ -t 1 ]; then
+    GREEN='\033[0;32m'
+    RED='\033[0;31m'
+    YELLOW='\033[1;33m'
+    CYAN='\033[0;36m'
+    BLUE='\033[0;34m'
+    BOLD='\033[1m'
+    NC='\033[0m'
+else
+    GREEN='' RED='' YELLOW='' CYAN='' BLUE='' BOLD='' NC=''
+fi
+
+# 2. 日志与终端打印函数
+log_info()    { echo -e "${CYAN}[i]${NC} $1"; logger -t ota "$1"; }
+log_success() { echo -e "${GREEN}[✓]${NC} $1"; logger -t ota "$1"; }
+log_warn()    { echo -e "${YELLOW}[!]${NC} $1"; logger -t ota "警告: $1"; }
+log_error()   { echo -e "${RED}[✗] $1${NC}"; logger -t ota "错误: $1"; }
+
+print_banner() {
+    [ -t 1 ] || return
+    echo -e "${BLUE}====================================================${NC}"
+    echo -e "${BOLD}  My-OpenWrt-Firmware (x86_64) OTA 检查更新系统${NC}"
+    echo -e "  项目: https://github.com/MinimaxFlora/My-OpenWrt-Firmware"
+    echo -e "${BLUE}====================================================${NC}"
+}
+
+# 3. 读取配置与初始化
+print_banner
+
+URL=$(uci -q get ota.general.url)
+ENABLED=$(uci -q get ota.general.enabled)
+
+if [ "$ENABLED" != "1" ]; then
+    log_warn "OTA 自动更新未开启 (ota.general.enabled != 1)"
+    exit 0
+fi
+
+if [ -z "$URL" ]; then
+    log_error "未配置 OTA 地址 (ota.general.url)"
+    exit 1
+fi
+
+WORK="/tmp/ota-check"
+rm -rf "$WORK"
+mkdir -p "$WORK"
+
+# 4. 获取并解析 manifest.json
+log_info "正在连接服务器检查更新..."
+if ! curl -sfL "$URL/manifest.json" -o "$WORK/manifest.json"; then
+    log_error "无法拉取 Update Manifest ($URL/manifest.json)"
+    exit 1
+fi
+
+NEWVER=$(jsonfilter -s "$WORK/manifest.json" -e '@.version' 2>/dev/null)
+IMG=$(jsonfilter -s "$WORK/manifest.json" -e '@.image' 2>/dev/null)
+SHA=$(jsonfilter -s "$WORK/manifest.json" -e '@.sha256' 2>/dev/null)
+
+if [ -z "$NEWVER" ] || [ -z "$IMG" ] || [ -z "$SHA" ]; then
+    log_error "Manifest 字段解析失败，请检查配置或服务器文件"
+    exit 1
+fi
+
+CURVER=$(cat /etc/ota_version 2>/dev/null || echo "未知/初次安装")
+
+# 5. 版本显示与比对
+if [ -t 1 ]; then
+    echo -e "\n${BOLD}┌────────────────────────────────────────┐${NC}"
+    echo -e "  当前系统版本 : ${YELLOW}$CURVER${NC}"
+    echo -e "  远程最新版本 : ${GREEN}$NEWVER${NC}"
+    echo -e "${BOLD}└────────────────────────────────────────┘${NC}\n"
+fi
+
+if [ "$NEWVER" = "$CURVER" ] && [ "$1" != "-f" ]; then
+    log_success "当前系统已是最新版本，无需升级。"
+    rm -rf "$WORK"
+    exit 0
+fi
+
+# 6. x86_64 空间容量预检
+FREE_KB=$(df -k /tmp | awk 'NR==2 {print $4}')
+if [ "$FREE_KB" -lt 153600 ]; then
+    log_warn "/tmp 可用内存空间较小 (约 $((FREE_KB/1024)) MB)，下载大型 x86_64 固件可能受限"
+fi
+
+# 7. 下载固件（终端模式下显示进度条）
+FIRMWARE_PATH="$WORK/$IMG"
+log_info "发现新版本，准备下载固件: $IMG"
+
+CURL_OPTS="-fL"
+[ -t 1 ] && CURL_OPTS="$CURL_OPTS -#" || CURL_OPTS="$CURL_OPTS -s"
+
+if ! curl $CURL_OPTS "$URL/$IMG" -o "$FIRMWARE_PATH"; then
+    log_error "固件下载失败！"
+    rm -rf "$WORK"
+    exit 1
+fi
+
+# 8. SHA256 哈希校验
+log_info "正在进行 SHA256 完整性校验..."
+ACTUAL_SHA=$(sha256sum "$FIRMWARE_PATH" | awk '{print $1}')
+
+if [ "$ACTUAL_SHA" != "$SHA" ]; then
+    log_error "SHA256 校验失败！"
+    [ -t 1 ] && echo -e "  预期哈希: ${GREEN}$SHA${NC}\n  实际哈希: ${RED}$ACTUAL_SHA${NC}"
+    rm -rf "$WORK"
+    exit 1
+fi
+log_success "固件校验成功！"
+
+# 9. 写入版本号并执行升级
+echo "$NEWVER" > /etc/ota_version
+
+if [ -t 1 ]; then
+    echo -e "\n${YELLOW}${BOLD}[!] 系统即将在 3 秒后开始刷入固件（保留配置重启）...${NC}"
+    echo -e "${YELLOW}    升级过程中请勿断电，设备重启后自动恢复正常使用。${NC}\n"
+fi
+
+logger -t ota "开始执行 sysupgrade -v $FIRMWARE_PATH"
+sleep 3
+
+sysupgrade -v "$FIRMWARE_PATH"
