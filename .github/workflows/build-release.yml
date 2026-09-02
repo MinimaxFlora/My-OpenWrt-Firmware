@@ -90,7 +90,7 @@ jobs:
       - name: 🧹 可用磁盘空间
         run: |
           echo "::group::🧹 清理交换空间"
-          sudo mkdir -p ${{ github.workspace }}
+          sudo mkdir -p /home/runner/work/My-OpenWrt-Firmware/My-OpenWrt-Firmware
           sudo find /opt -mindepth 1 -maxdepth 1 ! -name "*runner*" -exec rm -rf {} \;
           sudo rm -rf /usr/local/lib/android \
           /usr/lib/google-cloud-sdk \
@@ -126,10 +126,10 @@ jobs:
             sudo vgcreate github /dev/loop6 /dev/loop7
             sudo lvcreate -n runner -l 100%FREE github
             sudo mkfs.xfs /dev/mapper/github-runner
-            sudo mount /dev/mapper/github-runner "$BUILD_MOUNT_PATH"
+            sudo mount /dev/mapper/github-runner /home/runner/work/My-OpenWrt-Firmware/My-OpenWrt-Firmware
             echo "::endgroup::"
           fi
-          sudo chown -R runner:runner ${{ github.workspace }}
+          sudo chown -R runner:runner /home/runner/work/My-OpenWrt-Firmware/My-OpenWrt-Firmware
           sudo sysctl -w vm.drop_caches=3
 
       - name: 📊 修改后磁盘空间报告
@@ -185,8 +185,9 @@ jobs:
           git clone --depth=1 -b openwrt-25.12 https://github.com/openwrt/openwrt.git
           sed -i 's|https://git.openwrt.org/feed/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
           sed -i 's|https://git.openwrt.org/project/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
-          cp -f diy-part1.sh openwrt/diy-part1.sh
-          chmod +x openwrt/diy-part1.sh && ./openwrt/diy-part1.sh
+          cd openwrt
+          cp -f ../diy-part1.sh ./
+          chmod +x ./diy-part1.sh && ./diy-part1.sh
 
       - name: 🔄 更新并安装 Feeds
         working-directory: ./openwrt
