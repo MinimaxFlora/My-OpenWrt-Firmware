@@ -48,4 +48,20 @@ git clone --depth=1 -b master https://github.com/jerrykuku/luci-app-argon-config
 sed -i '/ifneq (0,0)/i TARGET_CFLAGS += -std=gnu17\n' feeds/packages/net/xl2tpd/Makefile
 # ------------------------------------------------------------------------------
 
+# 应用 GENERIC 补丁
+patch -p1 < "$GITHUB_WORKSPACE/patches/GENERIC/0001-build-kernel-add-out-of-tree-kernel-config.patch"
+
+# 应用 LUCI 补丁
+pushd feeds/luci
+patch -p1 < "$GITHUB_WORKSPACE/patches/LUCI/0001-luci-mod-system-add-modal-overlay-dialog-to-reboot.patch"
+patch -p1 < "$GITHUB_WORKSPACE/patches/LUCI/0002-luci-mod-status-displays-actual-process-memory-usage.patch"
+patch -p1 < "$GITHUB_WORKSPACE/patches/LUCI/0003-luci-mod-status-storage-index-applicable-only-to-val.patch"
+patch -p1 < "$GITHUB_WORKSPACE/patches/LUCI/0004-luci-mod-status-firewall-disable-legacy-firewall-rul.patch"
+patch -p1 < "$GITHUB_WORKSPACE/patches/LUCI/0005-luci-mod-system-add-refresh-interval-setting.patch"
+patch -p1 < "$GITHUB_WORKSPACE/patches/LUCI/0006-luci-mod-system-mounts-add-docker-directory-mount-po.patch"
+patch -p1 < "$GITHUB_WORKSPACE/patches/LUCI/0007-luci-mod-system-add-ucitrack-luci-mod-system-zram.js.patch"
+patch -p1 < "$GITHUB_WORKSPACE/patches/LUCI/0008-luci-mod-status-dmesg-add-ANSI-terminal-color-and-re.patch"
+popd
+# ------------------------------------------------------------------------------
+
 echo "✨ Feed 更新后的各项调整已全部完成！"
