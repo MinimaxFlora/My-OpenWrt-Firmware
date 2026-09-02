@@ -48,36 +48,34 @@ jobs:
           # 出于安全最佳实践，如果后续步骤不需要向仓库推送（git push）代码，建议关闭以防凭据泄露
           persist-credentials: false
 
-      - name: 生成系统摘要
+      - name: Show system
         run: |
-          # 1. 先将各项系统数据提取并保存到 Bash 变量中，避免复杂的转义冲突
-          CPU_INFO=$(lscpu | grep 'Model name' | cut -f 2 -d ':' | xargs)
-          CPU_CORES=$(nproc)
-          MEM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
-          MEM_FREE=$(free -h | awk '/Mem:/ {print $4}')
-          DISK_AVAIL=$(df -h / | awk 'NR==2 {print $4}')
-          DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
-          OS_KERNEL=$(uname -r)
+          # 1. CPU 信息
+          CPU_MODEL=$(grep 'model name' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')
+          CPU_FREQ=$(grep 'cpu MHz' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')
+          CPU_CORES=$(grep processor /proc/cpuinfo | wc -l)
+          echo -e "\n\e[1;32m[💻 计算核心 (CPU)]\e[0m"
+          echo -e "  • 型号规格 : \e[1m${CPU_MODEL:-未知}\e[0m"
+          echo -e "  • 核心频率 : \e[1m${CPU_FREQ:-未知} MHz\e[0m"
+          echo -e "  • 线程核心 : \e[1m${CPU_CORES} Cores\e[0m"
 
-          # 2. 写入摘要大标题及提示块
-          echo "## 🚀 GitHub Actions Runner Environment" >> $GITHUB_STEP_SUMMARY
-          echo "> **Status:** ✅ **System information collected successfully**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # 3. 写入系统规格说明表格的表头及对齐方式
-          echo "### 📊 System Specifications" >> $GITHUB_STEP_SUMMARY
-          echo "| Category | Item | Details |" >> $GITHUB_STEP_SUMMARY
-          echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          
-          # 4. 写入各项具体指标数据
-          echo "| **Build Environment** | Runtime | GitHub Actions Hosted Runner |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Processor (CPU)** | Model / Cores | ${CPU_INFO} / ${CPU_CORES} Cores |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Memory (RAM)** | Total / Free | ${MEM_TOTAL} / ${MEM_FREE} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Storage (Disk)** | Root Partition | ${DISK_AVAIL} available out of ${DISK_TOTAL} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Operating System** | OS | Ubuntu 24.04 LTS |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Kernel** | Version | ${OS_KERNEL} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # 5. 写入底部的分隔线和自动化生成提示尾注
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "*💡 Generated automatically by GitHub Actions workflow.*" >> $GITHUB_STEP_SUMMARY
+          # 2. 内存信息
+          echo -e "\n\e[1;32m[🧠 运行内存 (RAM)]\e[0m"
+          free -h | sed 's/^/  /'
+
+          # 3. 存储信息
+          echo -e "\n\e[1;32m[💾 存储空间 (Storage)]\e[0m"
+          df -Th / /mnt 2>/dev/null | sed 's/^/  /'
+
+          # 4. 系统版本
+          echo -e "\n\e[1;32m[🐧 操作系统 (System)]\e[0m"
+          if command -v lsb_release &> /dev/null; then
+              lsb_release -a 2>/dev/null | sed 's/^/  /'
+          else
+              cat /etc/os-release | sed 's/^/  /'
+          fi
+
+          # 5. 内核版本
+          echo -e "\n\e[1;32m[⚙️ 内核版本 (Kernel)]\e[0m"
+          echo -e "  • 版本号   : \e[1m$(uname -r)\e[0m"
+          echo -e "  • 完整架构 : \e[1m$(uname -s -m)\e[0m"
