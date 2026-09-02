@@ -37,7 +37,6 @@ jobs:
       
     # 定义该任务中需要依次执行的具体步骤（Steps）列表
     steps:
-      # 步骤的名称 "检出代码"
       - name: 📥 检出代码
         # 使用 GitHub 官方提供的 checkout 动作（v7.0.1 版本）
         # 其主要作用是将当前仓库的代码下载到运行器（Runner）的工作目录中
@@ -87,3 +86,80 @@ jobs:
           echo -e "\n\e[1;35m[📊 存储设备详情 (df -Th)]\e[0m"
           df -Th / /mnt 2>/dev/null | awk '{print $1, $2, $3, $4, $5, $6}' | column -t | sed 's/^/  │ /'
           echo -e "\e[1;36m=================================================================\e[0m\n"
+
+      - name: 🧹 可用磁盘空间
+        run: |
+          echo "::group::🧹 清理交换空间"
+          sudo mkdir -p ${{ github.workspace }}
+          sudo find /opt -mindepth 1 -maxdepth 1 ! -name "*runner*" -exec rm -rf {} \;
+          sudo rm -rf /usr/local/lib/android \
+          /usr/lib/google-cloud-sdk \
+          /usr/lib/jvm \
+          /usr/lib/{clang-16,clang-17,llvm-16,llvm-17} \
+          /usr/local/aws* \
+          /usr/local/julia* \
+          /usr/local/share/{chromium,powershell,vcpkg} \
+          /usr/share/dotnet \
+          /usr/share/swift
+          sudo swapoff -a
+          sudo rm -f /swapfile
+
+          echo "::group::  💽 创建交换"
+          sudo dd if=/dev/zero of="/mnt/swapfile" bs=1G count=4
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          echo "::endgroup::"
+
+          root_dev=$(df / | awk 'NR==2 {print $1}')
+          mnt_dev=$(df /mnt | awk 'NR==2 {print $1}')
+          if [[ "$root_dev" != "$mnt_dev" ]]; then
+            echo "::group::  🧱 创建卷组"
+            mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - ${{ inputs.swap-size-gb }})
+            root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - ${{ inputs.root-reserve-gb }})
+            sudo truncate -s "$mnt_size"G /mnt/mnt.img
+            sudo truncate -s "$root_size"G /root.img
+            sudo losetup /dev/loop6 /mnt/mnt.img
+            sudo losetup /dev/loop7 /root.img
+            sudo pvcreate /dev/loop6
+            sudo pvcreate /dev/loop7
+            sudo vgcreate github /dev/loop6 /dev/loop7
+            sudo lvcreate -n runner -l 100%FREE github
+            sudo mkfs.xfs /dev/mapper/github-runner
+            sudo mount /dev/mapper/github-runner "$BUILD_MOUNT_PATH"
+            echo "::endgroup::"
+          fi
+          sudo chown -R runner:runner ${{ github.workspace }}
+          sudo sysctl -w vm.drop_caches=3
+
+      - name: 🛠️ 配置构建系统环境
+        run: |
+          echo "::group::📦 安装 OpenWrt 编译依赖"
+          sudo rm -rf /etc/apt/sources.list.d
+          sudo bash -c "curl -skL https://raw.githubusercontent.com/sbwml/actions/openwrt-build-setup/sources-24.04.list > /etc/apt/sources.list"
+          sudo apt-get update
+          sudo apt-get install -y \
+            antlr3 asciidoc autoconf automake binutils \
+            bison build-essential bzip2 ccache cmake \
+            coreutils curl file flex g++ \
+            g++-multilib gawk gcc-multilib gettext git \
+            gnutls-dev gperf haveged jq lib32gcc-s1 \
+            libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libncurses5-dev \
+            libplist-utils libpython3-dev libreadline-dev libssl-dev libtool \
+            msmtp patch python3 python3-pip python3-ply \
+            python3-pyelftools qemu-utils rename rsync scons \
+            subversion swig texinfo uglifyjs unzip \
+            upx-ucl wget xmlto zlib1g-dev
+
+          echo "::group::🐳 安装 Docker 环境"
+          sudo mkdir -p /etc/apt/sources.list.d
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y \
+            containerd.io docker-buildx-plugin docker-ce \
+            docker-ce-cli docker-ce-rootless-extras docker-compose-plugin
+          if [ -f /usr/libexec/docker/docker-init ]; then
+            sudo ln -sf /usr/libexec/docker/docker-init /usr/local/bin/docker-init
+          fi
+          sudo apt-get clean
