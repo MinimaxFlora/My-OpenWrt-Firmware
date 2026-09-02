@@ -162,4 +162,13 @@ jobs:
           if [ -f /usr/libexec/docker/docker-init ]; then
             sudo ln -sf /usr/libexec/docker/docker-init /usr/local/bin/docker-init
           fi
+
+          echo "::group::⚙️ 安装 LLVM/Clang 工具链"
+          export PATH="/opt/clang/bin:$PATH"
+          echo "/opt/clang/bin" >> $GITHUB_PATH
+          sudo mkdir /opt/clang
+          wget -q https://github.com/sbwml/openwrt-llvm-toolchain/releases/download/22.0.2/clang-22.0.2-x86_64-unknown-linux-gnu.tar.xz
+          sudo tar --strip-components=1 -C /opt/clang -xf clang-*-x86_64-unknown-linux-gnu.tar.xz
+          rm -rf clang-*-x86_64-unknown-linux-gnu.tar.xz
+          clang --version
           sudo apt-get clean
