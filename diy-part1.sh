@@ -16,6 +16,6 @@ echo "📦 正在添加自定义扩展源..."
 
 # 2. 追加第三方软件源 (按需取消注释并修改下方地址)
 # 格式: src-git <源名称> <Git仓库地址>;<分支名称>
-echo "src-git custom_feed https://github.com/MinimaxFlora/openwrt_package.git;master" >> feeds.conf.default
+# echo "src-git custom_feed https://github.com/MinimaxFlora/openwrt_package.git;master" >> feeds.conf.default
 
 echo "✨ 自定义 Feed 源配置已完成！"
