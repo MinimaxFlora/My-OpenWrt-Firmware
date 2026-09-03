@@ -241,7 +241,7 @@ log_info "配置 Natmap..."
 sed -i 's/log_stdout:bool:1/log_stdout:bool:0/g;s/log_stderr:bool:1/log_stderr:bool:0/g' feeds/packages/net/natmap/files/natmap.init
 
 pushd feeds/luci >/dev/null
-    curl -s "${mirror}/openwrt/patch/luci/applications/luci-app-natmap/0001-luci-app-natmap-add-default-STUN-server-lists.patch" | patch -p1
+    curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/NATMAP/0001-luci-app-natmap-add-default-STUN-server-lists.patch" | patch -p1
 popd >/dev/null
 
 # --- FRPC ---
@@ -256,8 +256,8 @@ sed -i "s/'conf_inc:list(string)'/& \\\\/" feeds/packages/net/frp/files/frpc.ini
 sed -i "/conf_inc:list/a\\\t\t\'enable:bool:0\'" feeds/packages/net/frp/files/frpc.init
 sed -i '/procd_open_instance/i\\t\[ "$enable" -ne 1 \] \&\& return 1\n' feeds/packages/net/frp/files/frpc.init
 
-curl -s "${mirror}/openwrt/patch/luci/applications/luci-app-frpc/001-luci-app-frpc-hide-token.patch" | patch -p1
-curl -s "${mirror}/openwrt/patch/luci/applications/luci-app-frpc/002-luci-app-frpc-add-enable-flag.patch" | patch -p1
+curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/FRPC/001-luci-app-frpc-hide-token.patch" | patch -p1
+curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/FRPC/002-luci-app-frpc-add-enable-flag.patch" | patch -p1
 
 # --- Samba4 ---
 log_info "配置 Samba4..."
