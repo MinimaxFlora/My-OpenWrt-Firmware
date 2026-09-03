@@ -21,7 +21,8 @@ echo "⚙️ 正在执行 feeds 更新后的自定义调整..."
 rm -rf package/system/urngd
 rm -rf package/firmware/intel-microcode
 rm -rf feeds/packages/lang/{golang,rust,node}
-rm -rf feeds/packages/utils/{docker,dockerd,containerd,runc}
+rm -rf feeds/packages/net/{xray-core,v2ray-core,v2ray-geodata,sing-box,zerotier}
+rm -rf feeds/packages/utils/{coremark,docker,dockerd,containerd,runc}
 rm -rf feeds/luci/applications/{luci-app-dockerman,luci-app-filemanager}
 
 # 示例 B: 修改默认主题配置
@@ -83,6 +84,14 @@ git clone --depth=1 https://github.com/sbwml/luci-app-airconnect package/new/air
 
 # qBittorrent
 git clone --depth=1 https://github.com/sbwml/luci-app-qbittorrent package/new/qbittorrent
+# ------------------------------------------------------------------------------
+
+# Zerotier
+git clone --depth=1 https://github.com/sbwml/feeds_packages_net_zerotier feeds/packages/net/zerotier
+# ------------------------------------------------------------------------------
+
+# SSR Plus
+git clone --depth=1 -b v5 https://github.com/sbwml/openwrt_helloworld package/new/helloworld -b v5
 # ------------------------------------------------------------------------------
 
 # Docker 管理
