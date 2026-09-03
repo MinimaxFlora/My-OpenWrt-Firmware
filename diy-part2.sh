@@ -22,7 +22,7 @@ rm -rf package/system/urngd
 rm -rf package/firmware/intel-microcode
 rm -rf feeds/packages/lang/{golang,rust,node}
 rm -rf feeds/packages/utils/{docker,dockerd,containerd,runc}
-rm -rf feeds/luci/applications/luci-app-dockerman
+rm -rf feeds/luci/applications/{luci-app-dockerman,luci-app-filemanager}
 
 # 示例 B: 修改默认主题配置
 # sed -i 's/luci-theme-bootstrap/luci-theme-nebula/g' feeds/luci/collections/luci/Makefile
@@ -62,7 +62,6 @@ git clone --depth=1 https://github.com/sbwml/luci-app-diskman package/new/diskma
 # ------------------------------------------------------------------------------
 
 # 文件管理
-rm -rf feeds/luci/applications/luci-app-filemanager
 git clone --depth=1 https://github.com/sbwml/luci-app-filemanager package/new/luci-app-filemanager
 # ------------------------------------------------------------------------------
 
