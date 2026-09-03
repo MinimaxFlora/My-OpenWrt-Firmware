@@ -389,7 +389,7 @@ if [ -f "$PO_FILE" ]; then
         # 增加去重检查，仅注入不存在的 msgid
         if ! grep -q "msgid \"$msgid\"" "$PO_FILE"; then
             printf '\nmsgid "%s"\nmsgstr "%s"\n' "$msgid" "$msgstr" >> "$PO_FILE"
-            ((added_count++))
+            added_count=$((added_count + 1))
         fi
     done
     log_success "成功注入 ${added_count} 条新增汉化词条。"
