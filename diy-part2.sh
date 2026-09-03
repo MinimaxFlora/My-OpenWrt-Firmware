@@ -19,6 +19,7 @@ echo "⚙️ 正在执行 feeds 更新后的自定义调整..."
 # ------------------------------------------------------------------------------
 # 替换或删除冲突的软件包
 rm -rf package/system/urngd
+rm -rf package/firmware/intel-microcode
 rm -rf feeds/packages/lang/{golang,rust,node}
 rm -rf feeds/packages/utils/{docker,dockerd,containerd,runc}
 rm -rf feeds/luci/applications/luci-app-dockerman
@@ -65,6 +66,9 @@ git clone --depth=1 https://github.com/sbwml/package_system_urngd package/system
 
 # TCP-BRUTAL
 git clone --depth=1 https://github.com/sbwml/package_kernel_tcp-brutal package/kernel/tcp-brutal
+
+# INTEL-MICROCODE
+git clone --depth=1 https://github.com/MinimaxFlora/intel-microcode package/firmware/intel-microcode
 
 # ARGON 主题
 git clone --depth=1 -b master https://github.com/jerrykuku/luci-theme-argon package/new/luci-theme-argon
