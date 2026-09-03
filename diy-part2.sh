@@ -22,7 +22,7 @@ if [ -t 1 ]; then
     CLR_CYAN='\033[36m'
     CLR_GRAY='\033[90m'
 else
-    CLR_RESET='' CLR_BOLD='' CLR_RED='' CLR_GREEN='' 
+    CLR_RESET='' CLR_BOLD='' CLR_RED='' CLR_GREEN=''
     CLR_YELLOW='' CLR_BLUE='' CLR_PURPLE='' CLR_CYAN='' CLR_GRAY=''
 fi
 
@@ -218,6 +218,22 @@ sed -i 's/services/system/g' feeds/luci/applications/luci-app-ttyd/root/usr/shar
 sed -i '3 a\t\t"order": 50,' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
 sed -i 's/procd_set_param stdout 1/procd_set_param stdout 0/g' feeds/packages/utils/ttyd/files/ttyd.init
 sed -i 's/procd_set_param stderr 1/procd_set_param stderr 0/g' feeds/packages/utils/ttyd/files/ttyd.init
+
+# --- LuCI Menu Redirection (Services -> Network) ---
+log_info "调整部分 LuCI 应用菜单分类至网络菜单..."
+MENU_JSONS=(
+    "package/new/custom/luci-app-socat/root/usr/share/luci/menu.d/luci-app-socat.json"
+    "package/new/custom/luci-app-netspeedtest/root/usr/share/luci/menu.d/luci-app-netspeedtest.json"
+    "package/new/luci-app-netspeedtest/root/usr/share/luci/menu.d/luci-app-netspeedtest.json"
+    "feeds/luci/applications/luci-app-netspeedtest/root/usr/share/luci/menu.d/luci-app-netspeedtest.json"
+)
+
+for json in "${MENU_JSONS[@]}"; do
+    if [ -f "$json" ]; then
+        sed -i 's#"admin/services/"#"admin/network/"#g; s#"target": "admin/services/#"target": "admin/network/#g' "$json"
+        log_info "已重定向菜单路径: ${CLR_GRAY}$(basename "$json")${CLR_RESET}"
+    fi
+done
 
 # --- Web Engine (Nginx / uWSGI / Rpcd) Tuning ---
 log_info "切换 Web 引擎至 Nginx，全面优化 RPC 与并发响应..."
