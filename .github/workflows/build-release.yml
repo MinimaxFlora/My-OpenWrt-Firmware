@@ -240,7 +240,7 @@ jobs:
           FIRMWARE_DIR="${GITHUB_WORKSPACE}/firmware_out"
           mkdir -p "$FIRMWARE_DIR"
           
-          RELEASE_TAG="EternalWrt_$(date +'%Y.%m.%d-%H%M')"
+          RELEASE_TAG="ZeroWrt_$(date +'%Y.%m.%d-%H%M')"
           BUILD_DATE=$(date +"%Y-%m-%d %H:%M:%S")
           
           sha256sum * > sha256sums.txt
