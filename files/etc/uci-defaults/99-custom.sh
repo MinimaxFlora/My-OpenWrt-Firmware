@@ -11,13 +11,9 @@ uci set system.@system[0].conloglevel='1'
 uci set system.@system[0].cronloglevel='9'
 uci commit system
 
-# 切换镜像源
+# 添加 Kmod支持
 distfeeds=/etc/apk/repositories.d/distfeeds.list
-if [ $(grep -c SNAPSHOT "$distfeeds") -eq '0' ]; then
-  sed -i 's,downloads.openwrt.org,mirrors.cloud.tencent.com/openwrt,g' "$distfeeds"
-else
-  sed -i 's,downloads.openwrt.org,mirror.sjtu.edu.cn/openwrt,g' "$distfeeds"
-fi
+echo "https://core.kejizero.xyz/25.12/targets/x86/64/$(grep kernel /etc/apk/world | awk -F= '{print $2}')/packages.adb" >> "$distfeeds"
 
 # Nginx 设置
 uci set nginx.global.uci_enable='true'
