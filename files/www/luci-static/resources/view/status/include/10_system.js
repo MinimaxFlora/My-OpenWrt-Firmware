@@ -112,7 +112,7 @@ return baseclass.extend({
 				systeminfo.load[0] / 65535.0,
 				systeminfo.load[1] / 65535.0,
 				systeminfo.load[2] / 65535.0
-			) : null
+			) : null,
 			_('CPU usage (%)'),    cpuusage.cpuusage,
 			_('Help & Feedback'),  E('div', { 'style': 'display:flex;gap:8px;align-items:center;' }, [
 				E('a', { 'href': 'https://github.com/MinimaxFlora/My-OpenWrt-Firmware', 'target': '_blank', 'class': 'support-btn' }, _('Project Website')),
