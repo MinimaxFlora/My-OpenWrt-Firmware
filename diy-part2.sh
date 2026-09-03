@@ -84,6 +84,7 @@ REMOVE_PATHS=(
     "feeds/packages/net/v2ray-core"
     "feeds/packages/net/v2ray-geodata"
     "feeds/packages/net/sing-box"
+#    "feeds/packages/net/samba4"
     "feeds/packages/net/zerotier"
     "feeds/packages/net/nginx"
     "feeds/packages/utils/coremark"
@@ -129,6 +130,7 @@ REPOS=(
     "https://github.com/sbwml/openwrt_helloworld|v5|package/new/helloworld"
     "https://github.com/sbwml/luci-app-dockerman|openwrt-25.12|feeds/luci/applications/luci-app-dockerman"
     "https://github.com/sbwml/packages_utils_docker||feeds/packages/utils/docker"
+#    "https://github.com/sbwml/feeds_packages_net_samba4||feeds/packages/net/samba4"
     "https://github.com/sbwml/packages_utils_dockerd||feeds/packages/utils/dockerd"
     "https://github.com/sbwml/packages_utils_containerd||feeds/packages/utils/containerd"
     "https://github.com/sbwml/packages_utils_runc||feeds/packages/utils/runc"
@@ -233,6 +235,48 @@ sed -i 's/cheaper = 1/cheaper = 2/g' feeds/packages/net/uwsgi/files-luci-support
 
 sed -i 's/option timeout 30/option timeout 60/g' package/system/rpcd/files/rpcd.config
 sed -i 's#20) \* 1000#60) \* 1000#g' feeds/luci/modules/luci-base/htdocs/luci-static/resources/rpc.js
+
+# --- Natmap ---
+log_info "配置 Natmap..."
+sed -i 's/log_stdout:bool:1/log_stdout:bool:0/g;s/log_stderr:bool:1/log_stderr:bool:0/g' feeds/packages/net/natmap/files/natmap.init
+
+pushd feeds/luci >/dev/null
+    curl -s "${mirror}/openwrt/patch/luci/applications/luci-app-natmap/0001-luci-app-natmap-add-default-STUN-server-lists.patch" | patch -p1
+popd >/dev/null
+
+# --- FRPC ---
+log_info "配置 FRPC..."
+sed -i 's/procd_set_param stdout $stdout/procd_set_param stdout 0/g' feeds/packages/net/frp/files/frpc.init
+sed -i 's/procd_set_param stderr $stderr/procd_set_param stderr 0/g' feeds/packages/net/frp/files/frpc.init
+sed -i 's/stdout stderr //g' feeds/packages/net/frp/files/frpc.init
+sed -i '/stdout:bool/d;/stderr:bool/d' feeds/packages/net/frp/files/frpc.init
+sed -i '/stdout/d;/stderr/d' feeds/packages/net/frp/files/frpc.config
+sed -i 's/env conf_inc/env conf_inc enable/g' feeds/packages/net/frp/files/frpc.init
+sed -i "s/'conf_inc:list(string)'/& \\\\/" feeds/packages/net/frp/files/frpc.init
+sed -i "/conf_inc:list/a\\\t\t\'enable:bool:0\'" feeds/packages/net/frp/files/frpc.init
+sed -i '/procd_open_instance/i\\t\[ "$enable" -ne 1 \] \&\& return 1\n' feeds/packages/net/frp/files/frpc.init
+
+curl -s "${mirror}/openwrt/patch/luci/applications/luci-app-frpc/001-luci-app-frpc-hide-token.patch" | patch -p1
+curl -s "${mirror}/openwrt/patch/luci/applications/luci-app-frpc/002-luci-app-frpc-add-enable-flag.patch" | patch -p1
+
+# --- Samba4 ---
+log_info "配置 Samba4..."
+# 启用 multi-channel
+sed -i '/workgroup/a \\n\t## enable multi-channel' feeds/packages/net/samba4/files/smb.conf.template
+sed -i '/enable multi-channel/a \\tserver multi channel support = yes' feeds/packages/net/samba4/files/smb.conf.template
+
+# 默认参数微调
+sed -i 's/#aio read size = 0/aio read size = 0/g' feeds/packages/net/samba4/files/smb.conf.template
+sed -i 's/#aio write size = 0/aio write size = 0/g' feeds/packages/net/samba4/files/smb.conf.template
+sed -i 's/invalid users = root/#invalid users = root/g' feeds/packages/net/samba4/files/smb.conf.template
+sed -i 's/bind interfaces only = yes/bind interfaces only = no/g' feeds/packages/net/samba4/files/smb.conf.template
+sed -i 's/#create mask/create mask/g' feeds/packages/net/samba4/files/smb.conf.template
+sed -i 's/#directory mask/directory mask/g' feeds/packages/net/samba4/files/smb.conf.template
+
+# 修正文件权限掩码
+sed -i 's/0666/0644/g;s/0744/0755/g;s/0777/0755/g' feeds/luci/applications/luci-app-samba4/htdocs/luci-static/resources/view/samba4.js
+sed -i 's/0666/0644/g;s/0777/0755/g' feeds/packages/net/samba4/files/samba.config
+sed -i 's/0666/0644/g;s/0777/0755/g' feeds/packages/net/samba4/files/smb.conf.template
 
 # --- Bootstrap Theme & Vermagic ---
 log_info "修正 Bootstrap UI 细节与 Vermagic 哈希计算..."
