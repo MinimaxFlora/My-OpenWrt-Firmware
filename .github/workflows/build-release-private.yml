@@ -1,0 +1,174 @@
+name: Build Releases Private
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [upstream-update]
+
+jobs:
+  build:
+    # 使用本地自托管运行器
+    runs-on: self-hosted
+    
+    if: ${{ github.event.repository.owner.id == github.event.sender.id }}
+    timeout-minutes: 360
+    
+    defaults:
+      run:
+        shell: bash
+        
+    permissions:
+      contents: read
+      actions: read
+      
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: 🧹 清理上一次构建残余
+        run: |
+          # 确保自托管 Runner 每次构建都在干净的文件夹下进行
+          rm -rf openwrt firmware_out
+
+      - name: 🖥️ 显示系统信息
+        run: |
+          CPU_MODEL=$(grep 'model name' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')
+          CPU_FREQ=$(grep 'cpu MHz' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')
+          CPU_CORES=$(grep processor /proc/cpuinfo | wc -l)
+          MEM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
+          MEM_FREE=$(free -h | awk '/Mem:/ {print $4}')
+          DISK_AVAIL=$(df -h . | awk 'NR==2 {print $4}')
+          DISK_TOTAL=$(df -h . | awk 'NR==2 {print $2}')
+          OS_NAME=$(lsb_release -d 2>/dev/null | awk -F ':' '{print $2}' | xargs || cat /etc/os-release | grep PRETTY_NAME | cut -d '=' -f 2 | tr -d '"')
+          KERNEL_VER=$(uname -r)
+
+          echo -e "\n\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;33m         🚀 本地自托管 (Self-Hosted) 环境诊断报告               \e[0m"
+          echo -e "\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;32m[💻 计算核心 (CPU)]\e[0m : ${CPU_MODEL:-未知} (${CPU_CORES} 线程 / ${CPU_FREQ:-未知} MHz)"
+          echo -e "\e[1;32m[🧠 运行内存 (RAM)]\e[0m : 总量 ${MEM_TOTAL} / 可用 ${MEM_FREE}"
+          echo -e "\e[1;32m[💾 工作目录存储]\e[0m  : 可用 ${DISK_AVAIL} / 总计 ${DISK_TOTAL}"
+          echo -e "\e[1;32m[🐧 操作系统内核]\e[0m  : ${OS_NAME:-Linux} (Kernel ${KERNEL_VER})"
+          echo -e "\e[1;36m=================================================================\e[0m\n"
+
+      - name: ⬇️ 克隆 OpenWrt 源码
+        run: |
+          git clone --depth=1 -b openwrt-25.12 https://github.com/openwrt/openwrt.git
+          sed -i 's|https://git.openwrt.org/feed/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
+          sed -i 's|https://git.openwrt.org/project/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
+          cd openwrt
+          cp -f ../diy-part1.sh ./
+          chmod +x ./diy-part1.sh && ./diy-part1.sh
+
+      - name: 🔄 更新并安装 Feeds
+        working-directory: ./openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          cp -f ../diy-part2.sh ./diy-part2.sh
+          chmod +x ./diy-part2.sh && ./diy-part2.sh
+
+      - name: 📂 加载补丁文件
+        working-directory: ./openwrt
+        run: |
+          cp -rf $GITHUB_WORKSPACE/patches/BBRv3/* ./target/linux/generic/backport-6.12/
+          cp -rf $GITHUB_WORKSPACE/patches/LRNG/* ./target/linux/generic/hack-6.12/   
+
+      - name: ⚙️ 加载自定义配置
+        working-directory: ./openwrt
+        run: |
+          cp $GITHUB_WORKSPACE/.config .config
+          cp -rf $GITHUB_WORKSPACE/files ./
+          make defconfig
+
+      - name: 📚 下载软件包
+        run: |
+          cd openwrt
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: 🔨 编译固件
+        id: compile
+        run: |
+          cd openwrt
+          echo "$(nproc) 线程编译中..."
+          make -j$(nproc) || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 📦 整理固件与生成 Release 说明
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          
+          FIRMWARE_DIR="${GITHUB_WORKSPACE}/firmware_out"
+          mkdir -p "$FIRMWARE_DIR"
+          
+          RELEASE_TAG="EternalWrt_$(date +'%Y.%m.%d-%H%M')"
+          BUILD_DATE=$(date +"%Y-%m-%d %H:%M:%S")
+          
+          sha256sum * > sha256sums.txt
+
+          cat <<EOF > release_notes.md
+          # 🚀 EternalWrt 固件发布报告
+
+          | 配置项目 | 详细信息 |
+          | :--- | :--- |
+          | 🕒 **编译时间** | \`${BUILD_DATE}\` |
+          | 🏷️ **发布标签** | \`${RELEASE_TAG}\` |
+          | ⚡ **默认 IP** | \`192.168.1.1\` |
+          | 🔑 **默认密码** | \`none (无密码)\` |
+
+          ### 📦 包含固件文件与 SHA256 校验码
+          \`\`\`text
+          $(cat sha256sums.txt)
+          \`\`\`
+
+          > 💡 **提示**：建议刷机前核对文件 SHA256 校验码，确保固件传输完整无损。
+          EOF
+
+          echo "$RELEASE_TAG" > release_tag.txt
+          cp -rf * "$FIRMWARE_DIR/"
+
+          echo -e "\n\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;33m          📦 固件产物整理完毕报告 (RELEASE SUMMARY)             \e[0m"
+          echo -e "\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;32m[📁 固件输出路径]\e[0m : $FIRMWARE_DIR"
+          echo -e "\e[1;32m[🏷️ 发布 Tag 标签]\e[0m : \e[1m${RELEASE_TAG}\e[0m"
+          echo -e "\e[1;36m=================================================================\e[0m\n"
+
+      - name: 📤 上传固件 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EternalWrt_Firmware
+          path: ./firmware_out/*
+
+  release:
+    name: 🚀 发布 GitHub Release
+    needs: build
+    runs-on: self-hosted
+    permissions:
+      contents: write
+    if: needs.build.result == 'success'
+    
+    steps:
+      - name: 📥 下载固件 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: EternalWrt_Firmware
+          path: ./firmware
+
+      - name: 🚀 发布到 Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd ./firmware
+          
+          RELEASE_TAG=$(cat release_tag.txt)
+          rm -f release_tag.txt
+          
+          gh release create "$RELEASE_TAG" ./* \
+            --title "$RELEASE_TAG" \
+            --notes-file release_notes.md
