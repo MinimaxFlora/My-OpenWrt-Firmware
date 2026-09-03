@@ -73,6 +73,7 @@ jobs:
       - name: 📂 加载补丁文件
         working-directory: ./openwrt
         run: |
+          cp -rf $GITHUB_WORKSPACE/scripts/* ./
           cp -rf $GITHUB_WORKSPACE/patches/BBRv3/* ./target/linux/generic/backport-6.12/
           cp -rf $GITHUB_WORKSPACE/patches/LRNG/* ./target/linux/generic/hack-6.12/   
 
