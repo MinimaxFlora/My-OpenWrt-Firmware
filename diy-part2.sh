@@ -32,27 +32,61 @@ rm -rf feeds/luci/applications/luci-app-dockerman
 git clone --depth=1 -b 27.x https://github.com/sbwml/packages_lang_golang feeds/packages/lang/golang
 # ------------------------------------------------------------------------------
 
-# RUST
+# Rust
 git clone --depth=1 https://github.com/sbwml/packages_lang_rust feeds/packages/lang/rust
 # ------------------------------------------------------------------------------
 
-# NODE - PREBUILT
+# Node - Prebuilt
 git clone --depth=1 -b packages-25.12 https://github.com/sbwml/feeds_packages_lang_node feeds/packages/lang/node
 # ------------------------------------------------------------------------------
 
-# V2RAY 地理数据
+# V2ray 地理数据
 git clone --depth=1 https://github.com/sbwml/v2ray-geodata package/new/v2ray-geodata
 # ------------------------------------------------------------------------------
 
-# MOSDNS 转发器
+# Mosdns 转发器
 git clone --depth=1 -b v5 https://github.com/sbwml/luci-app-mosdns package/new/luci-app-mosdns
 # ------------------------------------------------------------------------------
 
-# OPENLIST 网盘
+# OpenList 网盘
 git clone --depth=1 -b main https://github.com/sbwml/luci-app-openlist2 package/new/luci-app-openlist2
 # ------------------------------------------------------------------------------
 
-# DOCKER 管理
+# 蓝牙
+git clone --depth=1 https://github.com/sbwml/luci-app-bluetooth package/new/luci-app-bluetooth
+git clone --depth=1 https://github.com/sbwml/package_new_bluez-alsa package/new/bluez-alsa
+# ------------------------------------------------------------------------------
+
+# 磁盘管理
+git clone --depth=1 https://github.com/sbwml/luci-app-diskman package/new/diskman
+# ------------------------------------------------------------------------------
+
+# 文件管理
+rm -rf feeds/luci/applications/luci-app-filemanager
+git clone --depth=1 https://github.com/sbwml/luci-app-filemanager package/new/luci-app-filemanager
+# ------------------------------------------------------------------------------
+
+# QuickFlie文件管理
+git clone --depth=1 https://github.com/sbwml/luci-app-quickfile package/new/quickfile
+# ------------------------------------------------------------------------------
+
+# AirPlay2
+git clone --depth=1 https://github.com/sbwml/luci-app-airplay2 package/new/airplay2
+# ------------------------------------------------------------------------------
+
+# WebDav
+git clone --depth=1 https://github.com/sbwml/luci-app-webdav package/new/luci-app-webdav
+# ------------------------------------------------------------------------------
+
+# Airconnect
+git clone --depth=1 https://github.com/sbwml/luci-app-airconnect package/new/airconnect
+# ------------------------------------------------------------------------------
+
+# qBittorrent
+git clone --depth=1 https://github.com/sbwml/luci-app-qbittorrent package/new/qbittorrent
+# ------------------------------------------------------------------------------
+
+# Docker 管理
 git clone --depth=1 https://github.com/sbwml/luci-app-dockerman -b openwrt-25.12 feeds/luci/applications/luci-app-dockerman
 git clone --depth=1 https://github.com/sbwml/packages_utils_docker feeds/packages/utils/docker
 git clone --depth=1 https://github.com/sbwml/packages_utils_dockerd feeds/packages/utils/dockerd
@@ -60,22 +94,22 @@ git clone --depth=1 https://github.com/sbwml/packages_utils_containerd feeds/pac
 git clone --depth=1 https://github.com/sbwml/packages_utils_runc feeds/packages/utils/runc
 # ------------------------------------------------------------------------------
 
-# URUGD
+# Urugd
 git clone --depth=1 https://github.com/sbwml/package_system_urngd package/system/urngd
 # ------------------------------------------------------------------------------
 
-# TCP-BRUTAL
+# TCP-Brutal
 git clone --depth=1 https://github.com/sbwml/package_kernel_tcp-brutal package/kernel/tcp-brutal
 
-# INTEL-MICROCODE
+# Intel-Microcode
 git clone --depth=1 https://github.com/MinimaxFlora/intel-microcode package/firmware/intel-microcode
 
-# ARGON 主题
+# Argon 主题
 git clone --depth=1 -b master https://github.com/jerrykuku/luci-theme-argon package/new/luci-theme-argon
 git clone --depth=1 -b master https://github.com/jerrykuku/luci-app-argon-config package/new/luci-app-argon-config
 # ------------------------------------------------------------------------------
 
-# ATTR 使用默认工具链
+# Attr 使用默认工具链
 sed -i '/PKG_BUILD_PARALLEL/aPKG_BUILD_FLAGS:=no-mold' feeds/packages/utils/attr/Makefile
 # ------------------------------------------------------------------------------
 
@@ -83,12 +117,24 @@ sed -i '/PKG_BUILD_PARALLEL/aPKG_BUILD_FLAGS:=no-mold' feeds/packages/utils/attr
 sed -i 's/noinitrd/noinitrd mitigations=off/g' target/linux/x86/image/grub-efi.cfg
 # ------------------------------------------------------------------------------
 
+# DDNS - 修复启动
+sed -i '/boot()/,+2d' feeds/packages/net/ddns-scripts/files/etc/init.d/ddns
+# ------------------------------------------------------------------------------
+
+# NlbWmon - 禁用系统日志
+sed -i 's/stderr 1/stderr 0/g' feeds/packages/net/nlbwmon/files/nlbwmon.init
+# ------------------------------------------------------------------------------
+
+# NetdData
+sed -i 's/syslog/none/g' feeds/packages/admin/netdata/files/netdata.conf
+# ------------------------------------------------------------------------------
+
 # 设置默认密码
 default_password=$(openssl passwd -5 password)
 sed -i "s|^root:[^:]*:|root:${default_password}:|" package/base-files/files/etc/shadow
 # ------------------------------------------------------------------------------
 
-# 切换 NGINX WEB 管理
+# 切换 Nginx Web 管理
 sed -i 's/+uhttpd /+luci-nginx /g' feeds/luci/collections/luci/Makefile
 sed -i 's/+uhttpd-mod-ubus //' feeds/luci/collections/luci/Makefile
 sed -i 's/+uhttpd /+luci-nginx /g' feeds/luci/collections/luci-light/Makefile
@@ -99,11 +145,11 @@ sed -i '/uhttpd-mod-ubus/d' feeds/luci/collections/luci-light/Makefile
 sed -i 's/+luci-nginx \\$/+luci-nginx/' feeds/luci/collections/luci-light/Makefile
 # ------------------------------------------------------------------------------
 
-# LIBUBOX 开启 02 级优化
+# LibuBox 开启 02 级优化
 sed -i '/TARGET_CFLAGS/ s/$/ -O2/' package/libs/libubox/Makefile
 # ------------------------------------------------------------------------------
 
-# PROCPS-NG - TOP
+# Procps-ng - TOP
 sed -i 's/enable-skill/enable-skill --disable-modern-top/g' feeds/packages/utils/procps-ng/Makefile
 # ------------------------------------------------------------------------------
 
@@ -114,22 +160,22 @@ sed -i 's/procd_set_param stdout 1/procd_set_param stdout 0/g' feeds/packages/ut
 sed -i 's/procd_set_param stderr 1/procd_set_param stderr 0/g' feeds/packages/utils/ttyd/files/ttyd.init
 # ------------------------------------------------------------------------------
 
-# NGINX - 最新版
+# Nginx - 最新版
 rm -rf feeds/packages/net/nginx
 git clone --depth=1 -b openwrt-25.12 https://github.com/sbwml/feeds_packages_net_nginx feeds/packages/net/nginx -b openwrt-25.12
 sed -i 's/procd_set_param stdout 1/procd_set_param stdout 0/g;s/procd_set_param stderr 1/procd_set_param stderr 0/g' feeds/packages/net/nginx/files/nginx.init
 # ------------------------------------------------------------------------------
 
-# NGINX - UBUS
+# Nginx - Ubus
 sed -i 's/ubus_parallel_req 2/ubus_parallel_req 6/g' feeds/packages/net/nginx/files-luci-support/60_nginx-luci-support
 sed -i '/ubus_parallel_req/a\        ubus_script_timeout 300;' feeds/packages/net/nginx/files-luci-support/60_nginx-luci-support
 # ------------------------------------------------------------------------------
 
-# NGINX-UTIL
+# Nginx-Util
 sed -i '/\/etc\/nginx\/uci.conf.template/d' feeds/packages/net/nginx-util/Makefile
 # ------------------------------------------------------------------------------
 
-# UWSGI - 修复超时问题
+# Uwsgi - 修复超时问题
 sed -i '$a cgi-timeout = 600' feeds/packages/net/uwsgi/files-luci-support/luci-*.ini
 sed -i '/limit-as/c\limit-as = 5000' feeds/packages/net/uwsgi/files-luci-support/luci-webui.ini
 # ------------------------------------------------------------------------------
@@ -138,24 +184,24 @@ sed -i '/limit-as/c\limit-as = 5000' feeds/packages/net/uwsgi/files-luci-support
 sed -i "s/procd_set_param stderr 1/procd_set_param stderr 0/g" feeds/packages/net/uwsgi/files/uwsgi.init
 # ------------------------------------------------------------------------------
 
-# UWSGI - 表现
+# Uwsgi - 表现
 sed -i 's/threads = 1/threads = 2/g' feeds/packages/net/uwsgi/files-luci-support/luci-webui.ini
 sed -i 's/processes = 3/processes = 4/g' feeds/packages/net/uwsgi/files-luci-support/luci-webui.ini
 sed -i 's/cheaper = 1/cheaper = 2/g' feeds/packages/net/uwsgi/files-luci-support/luci-webui.ini
 # ------------------------------------------------------------------------------
 
-# RPCD - 修复超时问题
+# Rpcd - 修复超时问题
 sed -i 's/option timeout 30/option timeout 60/g' package/system/rpcd/files/rpcd.config
 sed -i 's#20) \* 1000#60) \* 1000#g' feeds/luci/modules/luci-base/htdocs/luci-static/resources/rpc.js
 # ------------------------------------------------------------------------------
 
-# PROFILE
+# ProFlie
 sed -i 's#\\u@\\h:\\w\\\$#\\[\\e[32;1m\\][\\u@\\h\\[\\e[0m\\] \\[\\033[01;34m\\]\\W\\[\\033[00m\\]\\[\\e[32;1m\\]]\\[\\e[0m\\]\\\$#g' package/base-files/files/etc/profile
 sed -ri 's/(export PATH=")[^"]*/\1%PATH%:\/opt\/bin:\/opt\/sbin:\/opt\/usr\/bin:\/opt\/usr\/sbin/' package/base-files/files/etc/profile
 sed -i '/ENV/i\export TERM=xterm-color' package/base-files/files/etc/profile
 # ------------------------------------------------------------------------------
 
-# BASH
+# Bash
 sed -i 's#ash#bash#g' package/base-files/files/etc/passwd
 sed -i '\#export ENV=/etc/shinit#a export HISTCONTROL=ignoredups' package/base-files/files/etc/profile
 # ------------------------------------------------------------------------------
