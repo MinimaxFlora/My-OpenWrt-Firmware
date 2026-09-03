@@ -67,7 +67,7 @@ if [ ! -f "include/version.mk" ]; then
 fi
 
 START_TIME=$(date +%s)
-log_banner "   OpenWrt Post-Update Pipeline Initialization   "
+log_banner "    OpenWrt Post-Update Pipeline Initialization    "
 
 # ------------------------------------------------------------------------------
 # 1. 冲突软件包清理
@@ -84,10 +84,10 @@ REMOVE_PATHS=(
     "feeds/packages/net/v2ray-core"
     "feeds/packages/net/v2ray-geodata"
     "feeds/packages/net/sing-box"
-#    "feeds/packages/net/samba4"
+    # "feeds/packages/net/samba4"
+    "feeds/packages/utils/coremark"
     "feeds/packages/net/zerotier"
     "feeds/packages/net/nginx"
-    "feeds/packages/utils/coremark"
     "feeds/packages/utils/docker"
     "feeds/packages/utils/dockerd"
     "feeds/packages/utils/containerd"
@@ -130,7 +130,7 @@ REPOS=(
     "https://github.com/sbwml/openwrt_helloworld|v5|package/new/helloworld"
     "https://github.com/sbwml/luci-app-dockerman|openwrt-25.12|feeds/luci/applications/luci-app-dockerman"
     "https://github.com/sbwml/packages_utils_docker||feeds/packages/utils/docker"
-#    "https://github.com/sbwml/feeds_packages_net_samba4||feeds/packages/net/samba4"
+    # "https://github.com/sbwml/feeds_packages_net_samba4||feeds/packages/net/samba4"
     "https://github.com/sbwml/packages_utils_dockerd||feeds/packages/utils/dockerd"
     "https://github.com/sbwml/packages_utils_containerd||feeds/packages/utils/containerd"
     "https://github.com/sbwml/packages_utils_runc||feeds/packages/utils/runc"
@@ -140,6 +140,9 @@ REPOS=(
     "https://github.com/jerrykuku/luci-theme-argon|master|package/new/luci-theme-argon"
     "https://github.com/jerrykuku/luci-app-argon-config|master|package/new/luci-app-argon-config"
     "https://github.com/sbwml/feeds_packages_net_nginx|openwrt-25.12|feeds/packages/net/nginx"
+    "https://github.com/sbwml/openwrt_pkgs||package/new/custom"
+    "https://github.com/sbwml/OpenAppFilter||package/new/OpenAppFilter"
+    "https://github.com/sbwml/luci-app-mentohust||package/new/mentohust"
 )
 
 clone_repo() {
@@ -151,17 +154,23 @@ clone_repo() {
         branch_cmd="-b $branch"
     fi
 
+    # 若目标路径已存在则预先清理，确保 git clone 能顺利进行
+    [ -d "$dest" ] && rm -rf "$dest"
+
     mkdir -p "$(dirname "$dest")"
     if git clone --depth=1 $branch_cmd "$url" "$dest" &>/dev/null; then
         log_info "拉取成功: ${CLR_CYAN}$(basename "$dest")${CLR_RESET} -> ${CLR_GRAY}${dest}${CLR_RESET}"
     else
-        log_warn "拉取异常: ${url} (目录可能已存在或网络超时)"
+        log_warn "拉取异常: ${url} (请检查网络或 URL)"
     fi
 }
 
 for item in "${REPOS[@]}"; do
     clone_repo "$item"
 done
+
+# 清理拉取第三方仓库中不需要的冲突子包
+rm -rf package/new/custom/ddns-scripts-aliyun
 
 log_success "所有目标仓库处理完毕。"
 
@@ -206,7 +215,7 @@ log_info "收紧服务日志输出，调整 TTYD 菜单位置..."
 sed -i 's/stderr 1/stderr 0/g' feeds/packages/net/nlbwmon/files/nlbwmon.init
 sed -i 's/syslog/none/g' feeds/packages/admin/netdata/files/netdata.conf
 sed -i 's/services/system/g' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
-sed -i '3 a\\t\t"order": 50,' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
+sed -i '3 a\t\t"order": 50,' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
 sed -i 's/procd_set_param stdout 1/procd_set_param stdout 0/g' feeds/packages/utils/ttyd/files/ttyd.init
 sed -i 's/procd_set_param stderr 1/procd_set_param stderr 0/g' feeds/packages/utils/ttyd/files/ttyd.init
 
@@ -254,7 +263,7 @@ sed -i '/stdout/d;/stderr/d' feeds/packages/net/frp/files/frpc.config
 sed -i 's/env conf_inc/env conf_inc enable/g' feeds/packages/net/frp/files/frpc.init
 sed -i "s/'conf_inc:list(string)'/& \\\\/" feeds/packages/net/frp/files/frpc.init
 sed -i "/conf_inc:list/a\\\t\t\'enable:bool:0\'" feeds/packages/net/frp/files/frpc.init
-sed -i '/procd_open_instance/i\\t\[ "$enable" -ne 1 \] \&\& return 1\n' feeds/packages/net/frp/files/frpc.init
+sed -i '/procd_open_instance/i\	[ "$enable" -ne 1 ] && return 1\n' feeds/packages/net/frp/files/frpc.init
 
 curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/FRPC/001-luci-app-frpc-hide-token.patch" | patch -p1
 curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/FRPC/002-luci-app-frpc-add-enable-flag.patch" | patch -p1
@@ -358,11 +367,16 @@ if [ -f "$PO_FILE" ]; then
         "Donation Address|捐赠地址"
     )
 
+    added_count=0
     for item in "${TRANSLATIONS[@]}"; do
         IFS="|" read -r msgid msgstr <<< "$item"
-        printf '\nmsgid "%s"\nmsgstr "%s"\n' "$msgid" "$msgstr" >> "$PO_FILE"
+        # 增加去重检查，仅注入不存在的 msgid
+        if ! grep -q "msgid \"$msgid\"" "$PO_FILE"; then
+            printf '\nmsgid "%s"\nmsgstr "%s"\n' "$msgid" "$msgstr" >> "$PO_FILE"
+            ((added_count++))
+        fi
     done
-    log_success "成功注入 ${#TRANSLATIONS[@]} 条补全汉化词条。"
+    log_success "成功注入 ${added_count} 条新增汉化词条。"
 else
     log_warn "未找到目标 PO 文件: ${PO_FILE}，已跳过汉化补全。"
 fi
