@@ -63,6 +63,9 @@ git clone --depth=1 https://github.com/sbwml/packages_utils_runc feeds/packages/
 git clone --depth=1 https://github.com/sbwml/package_system_urngd package/system/urngd
 # ------------------------------------------------------------------------------
 
+# TCP-BRUTAL
+git clone --depth=1 https://github.com/sbwml/package_kernel_tcp-brutal package/kernel/tcp-brutal
+
 # ARGON 主题
 git clone --depth=1 -b master https://github.com/jerrykuku/luci-theme-argon package/new/luci-theme-argon
 git clone --depth=1 -b master https://github.com/jerrykuku/luci-app-argon-config package/new/luci-app-argon-config
