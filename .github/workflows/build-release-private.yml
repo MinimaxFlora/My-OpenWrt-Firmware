@@ -94,8 +94,8 @@ jobs:
         id: compile
         run: |
           cd openwrt
-          echo "$(nproc) 线程编译中..."
-          make -j$(nproc) || make -j1 V=s
+          echo "8 线程编译中..."
+          make -j8 || make -j1 V=s
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 📦 整理固件与生成 Release 说明
