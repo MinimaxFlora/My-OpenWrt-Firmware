@@ -179,6 +179,7 @@ grep HASH target/linux/generic/kernel-6.12 | awk -F'HASH-' '{print $2}' | awk '{
 
 # 移除 RTL8812AU-CT
 sed -i 's/^\([[:space:]]*DEPENDS:=.*\)$/\1 @BROKEN/' package/kernel/rtl8812au-ct/Makefile
+# ------------------------------------------------------------------------------
 
 # XL2TPD 隧道
 sed -i '/ifneq (0,0)/i TARGET_CFLAGS += -std=gnu17\n' feeds/packages/net/xl2tpd/Makefile
