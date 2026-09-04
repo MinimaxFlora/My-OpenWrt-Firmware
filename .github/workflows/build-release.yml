@@ -308,6 +308,13 @@ jobs:
 
           make -j$(nproc) || make -j1 V=s
 
+      - name: 📝 生成内核和 OTA 索引
+        run: |          
+          cd openwrt
+          cp -f ../diy-part3.sh ./diy-part3.sh
+          chmod +x ./diy-part3.sh
+          ./diy-part3.sh         
+          
       # ==========================================================
       # 生成 Release Tag / Release Notes
       # ==========================================================
