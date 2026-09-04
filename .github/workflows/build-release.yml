@@ -201,6 +201,7 @@ jobs:
         working-directory: ./openwrt
         run: |
           cp -rf $GITHUB_WORKSPACE/scripts/* ./
+          cp -rf $GITHUB_WORKSPACE/patches/IGC/996-intel-igc-i225-i226-disable-eee.patch ./target/linux/x86/patches-6.12/
           cp -rf $GITHUB_WORKSPACE/patches/BBRv3/* ./target/linux/generic/backport-6.12/
           cp -rf $GITHUB_WORKSPACE/patches/LRNG/* ./target/linux/generic/hack-6.12/   
           
