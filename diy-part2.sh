@@ -92,6 +92,7 @@ REMOVE_PATHS=(
     "feeds/packages/utils/dockerd"
     "feeds/packages/utils/containerd"
     "feeds/packages/utils/runc"
+    "feeds/luci/applications/luci-app-sqm"
     "feeds/luci/applications/luci-app-dockerman"
     "feeds/luci/applications/luci-app-filemanager"
 )
@@ -131,6 +132,7 @@ REPOS=(
     "https://github.com/sbwml/luci-app-dockerman|openwrt-25.12|feeds/luci/applications/luci-app-dockerman"
     "https://gitea.kejizero.xyz/zhao/packages_utils_docker||feeds/packages/utils/docker"
     # "https://github.com/sbwml/feeds_packages_net_samba4||feeds/packages/net/samba4"
+    "https://gitea.kejizero.xyz/zhao/luci-app-sqm||feeds/luci/applications/luci-app-sqm"
     "https://gitea.kejizero.xyz/zhao/packages_utils_dockerd||feeds/packages/utils/dockerd"
     "https://gitea.kejizero.xyz/zhao/packages_utils_containerd||feeds/packages/utils/containerd"
     "https://gitea.kejizero.xyz/zhao/packages_utils_runc||feeds/packages/utils/runc"
@@ -224,8 +226,6 @@ log_info "调整部分 LuCI 应用菜单分类至网络菜单..."
 MENU_JSONS=(
     "package/new/custom/luci-app-socat/root/usr/share/luci/menu.d/luci-app-socat.json"
     "package/new/custom/luci-app-netspeedtest/root/usr/share/luci/menu.d/luci-app-netspeedtest.json"
-    "package/new/luci-app-netspeedtest/root/usr/share/luci/menu.d/luci-app-netspeedtest.json"
-    "feeds/luci/applications/luci-app-netspeedtest/root/usr/share/luci/menu.d/luci-app-netspeedtest.json"
 )
 
 for json in "${MENU_JSONS[@]}"; do
