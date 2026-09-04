@@ -115,8 +115,8 @@ jobs:
           mnt_dev=$(df /mnt | awk 'NR==2 {print $1}')
           if [[ "$root_dev" != "$mnt_dev" ]]; then
             echo "::group::  🧱 创建卷组"
-            mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - ${{ inputs.swap-size-gb }})
-            root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - ${{ inputs.root-reserve-gb }})
+            mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4
+            root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 2
             sudo truncate -s "$mnt_size"G /mnt/mnt.img
             sudo truncate -s "$root_size"G /root.img
             sudo losetup /dev/loop6 /mnt/mnt.img
