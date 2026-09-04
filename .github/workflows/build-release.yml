@@ -295,7 +295,7 @@ jobs:
       - name: 📥 下载固件 Artifact
         uses: actions/download-artifact@main
         with:
-          name: EternalWrt_Firmware
+          name: ZeroWrt_Firmware
           path: ./firmware
 
       - name: 🚀 发布到 Releases
