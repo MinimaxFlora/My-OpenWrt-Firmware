@@ -457,7 +457,7 @@ jobs:
       # 下载 Artifact
       # ========================================================
       - name: 📥 下载固件 Artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: ZeroWrt_Firmware
           path: ./firmware
