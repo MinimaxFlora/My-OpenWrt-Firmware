@@ -2,7 +2,7 @@
 # ==============================================================================
 # ZeroWrt Firmware Post-Build Processing Engine
 # 运行阶段: 固件编译完成后执行 (Post-build)
-# 功能说明: 提取内核 Hash 生成专属索引目录、整理 kmod 依赖、生成 OTA 升级索引 (ota.json)
+# 功能说明: 提取内核 Hash 生成专属索引目录、打包 kmod 依赖、生成 OTA 升级索引 (ota.json)
 # ==============================================================================
 
 GREEN='\033[0;32m'
@@ -36,9 +36,11 @@ if [ -f "$KERNEL_VER_FILE" ]; then
     
     cp -a bin/packages/x86_64/base/rtl88*a-firmware*.apk "$kmodpkg_name/" 2>/dev/null || true
     
+    # 打包成 tar.gz 放到上一级目录供发布使用
     tar -czf "../${kmodpkg_name}.tar.gz" "$kmodpkg_name"
     echo -e "${GREEN}[+] kmod 依赖包打包完成: ${kmodpkg_name}.tar.gz${NC}"
     
+    # 传递环境变量给 GitHub Actions
     if [ -n "$GITHUB_ENV" ]; then
         echo "KMOD_PKG_NAME=${kmodpkg_name}" >> "$GITHUB_ENV"
     fi
