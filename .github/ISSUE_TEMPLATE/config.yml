@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation / 文档
+    url: https://github.com/MinimaxFlora/My-OpenWrt-Firmware/blob/master/README.md
+    about: Read README.md / README_ZH.md before opening an issue. 提问前请先阅读文档。
+  - name: 📦 Releases / 固件下载
+    url: https://github.com/MinimaxFlora/My-OpenWrt-Firmware/releases/latest
+    about: Download firmware images and sha256sums.txt. 下载固件与校验文件。
+  - name: 🔧 OpenWrt upstream
+    url: https://github.com/openwrt/openwrt/issues
+    about: Bugs in official OpenWrt packages belong upstream. 上游官方软件包问题请到 OpenWrt 仓库反馈。

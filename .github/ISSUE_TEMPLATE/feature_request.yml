@@ -1,0 +1,57 @@
+name: Feature request / 功能建议
+description: Suggest a package, patch, or workflow change. 建议软件包、补丁或编译流程改进。
+title: "[Feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the change and why it belongs in this x86_64 firmware overlay.
+
+        说明需求，以及它为什么适合放进本仓库的构建脚本 / `files/` / `patches/`。
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist / 提交前检查
+      options:
+        - label: I searched existing issues and did not find a duplicate. 已搜索现有 Issue，没有重复。
+          required: true
+        - label: This request targets x86_64 ZeroWrt, not ARM boxes. 需求针对 x86_64 ZeroWrt。
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 改动范围
+      options:
+        - .config / package selection
+        - files/ overlay
+        - patches/
+        - diy-part scripts
+        - GitHub Actions
+        - LuCI / theme
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / 要解决的问题
+      description: What is missing or awkward today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal / 建议方案
+      description: Package name, patch idea, or config change.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives / 备选方案
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context / 补充信息

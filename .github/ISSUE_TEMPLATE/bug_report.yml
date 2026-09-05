@@ -1,0 +1,93 @@
+name: Bug report / 缺陷反馈
+description: Report a firmware, build, or overlay bug. 报告固件、编译或覆盖层问题。
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        请先确认：本仓库只提供 **x86_64 generic** 固件（软路由 / 迷你主机 / NUC / 虚拟机），不是 ARM 盒子镜像。
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist / 提交前检查
+      options:
+        - label: I searched existing issues and did not find a duplicate. 已搜索现有 Issue，没有重复。
+          required: true
+        - label: I read README.md / README_ZH.md. 已阅读项目文档。
+          required: true
+        - label: This is an x86_64 device or VM, not an ARM TV box. 设备是 x86_64，不是 ARM 电视盒子。
+          required: true
+        - label: I verified the image SHA256 against sha256sums.txt. 已对照 sha256sums.txt 校验镜像。
+          required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category / 问题类型
+      options:
+        - Firmware boot / 固件无法启动
+        - Network / 网络
+        - LuCI / Web UI
+        - Package / 软件包
+        - Build / GitHub Actions 编译
+        - OTA
+        - Other / 其他
+    validations:
+      required: true
+  - type: input
+    id: image
+    attributes:
+      label: Firmware file / 固件文件名
+      description: Exact filename from Releases.
+      placeholder: openwrt-x86-64-generic-squashfs-combined-efi.img.gz
+    validations:
+      required: true
+  - type: input
+    id: release_tag
+    attributes:
+      label: Release tag / 发布标签
+      placeholder: ZeroWrt_2026.09.05-120000
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware / 硬件
+      description: CPU, NIC, boot mode (UEFI or BIOS), bare metal or VM.
+      placeholder: Intel N100 · i226-V · UEFI · bare metal
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      placeholder: |
+        1. Flash squashfs-combined-efi
+        2. Boot and open http://192.168.1.1
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected / 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual / 实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: Paste `logread`, `dmesg`, or Actions log snippets. Wrap in code fences.
+      render: shell
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context / 补充信息

@@ -1,0 +1,11 @@
+# Default owner for this repository
+* @MinimaxFlora
+
+.config                     @MinimaxFlora
+diy-part1.sh                @MinimaxFlora
+diy-part2.sh                @MinimaxFlora
+diy-part3.sh                @MinimaxFlora
+files/                      @MinimaxFlora
+patches/                    @MinimaxFlora
+scripts/                    @MinimaxFlora
+.github/                    @MinimaxFlora
