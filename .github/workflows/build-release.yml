@@ -1,7 +1,10 @@
 name: Build Releases
 
 on:
+  # 允许在 GitHub 仓库的 Actions 页面手动触发
   workflow_dispatch:
+
+  # 允许通过 Repository Dispatch 事件触发
   repository_dispatch:
     types: [upstream-update]
 
@@ -10,11 +13,13 @@ jobs:
     name: 🔨 编译 ZeroWrt
     runs-on: ubuntu-24.04
 
+    # 将 release_info 步骤生成的 Tag 输出给 release Job
     outputs:
       release_tag: ${{ steps.release_info.outputs.tag }}
-      kmod_pkg_name: ${{ steps.release_info.outputs.kmod_name }}
 
+    # 仅允许仓库所有者触发
     if: ${{ github.event.repository.owner.id == github.event.sender.id }}
+
     timeout-minutes: 360
 
     defaults:
@@ -34,47 +39,244 @@ jobs:
       - name: 🖥️ 显示系统信息
         run: |
           CPU_MODEL=$(grep 'model name' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')
+          CPU_FREQ=$(grep 'cpu MHz' /proc/cpuinfo | head -1 | awk -F ': ' '{print $2}')
           CPU_CORES=$(grep processor /proc/cpuinfo | wc -l)
           MEM_TOTAL=$(free -h | awk '/Mem:/ {print $2}')
+          MEM_FREE=$(free -h | awk '/Mem:/ {print $4}')
           DISK_AVAIL=$(df -h / | awk 'NR==2 {print $4}')
-          echo "💻 CPU: ${CPU_MODEL:-未知} (${CPU_CORES}核) | 内存: ${MEM_TOTAL} | 磁盘可用: ${DISK_AVAIL}"
+          DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
+          OS_NAME=$(lsb_release -d 2>/dev/null | awk -F ':' '{print $2}' | xargs || cat /etc/os-release | grep PRETTY_NAME | cut -d '=' -f 2 | tr -d '"')
+          KERNEL_VER=$(uname -r)
 
-      - name: 🧹 可用磁盘空间与交换空间
+          echo -e "\n\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;33m          🚀 运行环境与系统规格诊断报告 (SYSTEM DIAGNOSTICS)\e[0m"
+          echo -e "\e[1;36m=================================================================\e[0m"
+
+          echo -e "\e[1;32m[💻 计算核心 (CPU)]\e[0m"
+          echo -e "  • 处理器型号 : \e[1m${CPU_MODEL:-未知}\e[0m"
+          echo -e "  • 核心与频率 : \e[1m${CPU_CORES} 线程 / 核心\e[0m (${CPU_FREQ:-未知} MHz)"
+
+          echo -e "\n\e[1;32m[🧠 运行内存 (RAM)]\e[0m"
+          echo -e "  • 总容量 / 可用: \e[1m${MEM_TOTAL}\e[0m / 🟢 \e[1m${MEM_FREE}\e[0m"
+
+          echo -e "\n\e[1;32m[💾 根目录存储 (Storage)]\e[0m"
+          echo -e "  • 可用 / 总计  : \e[1m${DISK_AVAIL}\e[0m / 📁 \e[1m${DISK_TOTAL}\e[0m"
+
+          echo -e "\n\e[1;32m[🐧 操作系统与内核 (System & Kernel)]\e[0m"
+          echo -e "  • 发行版本     : ${OS_NAME:-Ubuntu 24.04 LTS}"
+          echo -e "  • Linux 内核   : \e[1m${KERNEL_VER}\e[0m"
+
+          echo -e "\n\e[1;35m-----------------------------------------------------------------\e[0m"
+          echo -e "\e[1;35m[📊 实时内存占用详情 (free -h)]\e[0m"
+          free -h | sed 's/^/  │ /'
+
+          echo -e "\n\e[1;35m[📊 存储设备详情 (df -Th)]\e[0m"
+          df -Th / /mnt 2>/dev/null | awk '{print $1, $2, $3, $4, $5, $6}' | column -t | sed 's/^/  │ /'
+
+          echo -e "\e[1;36m=================================================================\e[0m\n"
+
+      - name: 🧹 可用磁盘空间
         run: |
+          echo "::group::🧹 清理交换空间"
+
           sudo mkdir -p /home/runner/work/My-OpenWrt-Firmware/My-OpenWrt-Firmware
+
           sudo find /opt -mindepth 1 -maxdepth 1 ! -name "*runner*" -exec rm -rf {} \;
-          sudo rm -rf /usr/local/lib/android /usr/lib/google-cloud-sdk /usr/lib/jvm /usr/share/dotnet /usr/share/swift
-          sudo swapoff -a && sudo rm -f /swapfile
+
+          sudo rm -rf \
+            /usr/local/lib/android \
+            /usr/lib/google-cloud-sdk \
+            /usr/lib/jvm \
+            /usr/lib/{clang-16,clang-17,llvm-16,llvm-17} \
+            /usr/local/aws* \
+            /usr/local/julia* \
+            /usr/local/share/{chromium,powershell,vcpkg} \
+            /usr/share/dotnet \
+            /usr/share/swift
+
+          sudo swapoff -a
+          sudo rm -f /swapfile
+
+          echo "::endgroup::"
+
+          echo "::group::💽 创建交换"
+
           sudo dd if=/dev/zero of="/mnt/swapfile" bs=1G count=4
-          sudo chmod 600 /mnt/swapfile && sudo mkswap /mnt/swapfile && sudo swapon /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+
+          echo "::endgroup::"
+
+          root_dev=$(df / | awk 'NR==2 {print $1}')
+          mnt_dev=$(df /mnt | awk 'NR==2 {print $1}')
+
+          if [[ "$root_dev" != "$mnt_dev" ]]; then
+            echo "::group::🧱 创建卷组"
+
+            mnt_size=$(expr $(df -h /mnt | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 4)
+            root_size=$(expr $(df -h / | tail -1 | awk '{print $4}' | sed 's/[[:alpha:]]//g' | sed 's/\..*//') - 2)
+
+            sudo truncate -s "$mnt_size"G /mnt/mnt.img
+            sudo truncate -s "$root_size"G /root.img
+
+            sudo losetup /dev/loop6 /mnt/mnt.img
+            sudo losetup /dev/loop7 /root.img
+
+            sudo pvcreate /dev/loop6
+            sudo pvcreate /dev/loop7
+
+            sudo vgcreate github /dev/loop6 /dev/loop7
+            sudo lvcreate -n runner -l 100%FREE github
+
+            sudo mkfs.xfs /dev/mapper/github-runner
+
+            sudo mount \
+              /dev/mapper/github-runner \
+              /home/runner/work/My-OpenWrt-Firmware/My-OpenWrt-Firmware
+
+            echo "::endgroup::"
+          fi
+
+          sudo chown -R runner:runner \
+            /home/runner/work/My-OpenWrt-Firmware/My-OpenWrt-Firmware
+
+          sudo sysctl -w vm.drop_caches=3
+
+      - name: 📊 修改后磁盘空间报告
+        run: |
+          echo -e "\n\e[1;32mMemory:\e[0m"
+          sudo free -h
+
+          echo -e "\n\e[1;32mAvailable Storage:\e[0m"
+          sudo df -Th
 
       - name: 🛠️ 配置构建系统环境
         run: |
+          echo "::group::📦 安装 OpenWrt 编译依赖"
+
           sudo rm -rf /etc/apt/sources.list.d
-          sudo bash -c "curl -skL https://raw.githubusercontent.com/sbwml/actions/openwrt-build-setup/sources-24.04.list > /etc/apt/sources.list"
+
+          sudo bash -c \
+            "curl -skL https://raw.githubusercontent.com/sbwml/actions/openwrt-build-setup/sources-24.04.list > /etc/apt/sources.list"
+
           sudo apt-get update
-          sudo apt-get install -y antlr3 asciidoc autoconf automake binutils bison build-essential bzip2 ccache cmake coreutils curl file flex g++ g++-multilib gawk gcc-multilib gettext git gnutls-dev gperf haveged jq lib32gcc-s1 libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libncurses5-dev libplist-utils libpython3-dev libreadline-dev libssl-dev libtool msmtp patch python3 python3-pip python3-ply python3-pyelftools qemu-utils rename rsync scons subversion swig texinfo uglifyjs unzip upx-ucl wget xmlto zlib1g-dev
+
+          sudo apt-get install -y \
+            antlr3 asciidoc autoconf automake binutils \
+            bison build-essential bzip2 ccache cmake \
+            coreutils curl file flex g++ \
+            g++-multilib gawk gcc-multilib gettext git \
+            gnutls-dev gperf haveged jq lib32gcc-s1 \
+            libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libncurses5-dev \
+            libplist-utils libpython3-dev libreadline-dev libssl-dev libtool \
+            msmtp patch python3 python3-pip python3-ply \
+            python3-pyelftools qemu-utils rename rsync scons \
+            subversion swig texinfo uglifyjs unzip \
+            upx-ucl wget xmlto zlib1g-dev
+
+          echo "::endgroup::"
+
+          echo "::group::🐳 安装 Docker 环境"
+
+          sudo mkdir -p /etc/apt/sources.list.d
+
+          curl -fsSL \
+            https://download.docker.com/linux/ubuntu/gpg |
+            sudo gpg --dearmor \
+            -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" |
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            containerd.io \
+            docker-buildx-plugin \
+            docker-ce \
+            docker-ce-cli \
+            docker-ce-rootless-extras \
+            docker-compose-plugin
+
+          if [ -f /usr/libexec/docker/docker-init ]; then
+            sudo ln -sf \
+              /usr/libexec/docker/docker-init \
+              /usr/local/bin/docker-init
+          fi
+
+          echo "::endgroup::"
+
+          echo "::group::⚙️ 安装 LLVM/Clang 工具链"
+
+          export PATH="/opt/clang/bin:$PATH"
+          echo "/opt/clang/bin" >> "$GITHUB_PATH"
+
+          sudo mkdir -p /opt/clang
+
+          wget -q \
+            https://github.com/sbwml/openwrt-llvm-toolchain/releases/download/22.0.2/clang-22.0.2-x86_64-unknown-linux-gnu.tar.xz
+
+          sudo tar \
+            --strip-components=1 \
+            -C /opt/clang \
+            -xf clang-*-x86_64-unknown-linux-gnu.tar.xz
+
+          rm -rf clang-*-x86_64-unknown-linux-gnu.tar.xz
+
+          clang --version
+
+          sudo apt-get clean
+
+          echo "::endgroup::"
 
       - name: ⬇️ 克隆 OpenWrt 源码
         run: |
-          git clone --depth=1 -b openwrt-25.12 https://github.com/openwrt/openwrt.git
-          sed -i 's|https://git.openwrt.org/feed/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
-          sed -i 's|https://git.openwrt.org/project/|https://github.com/openwrt/|g' openwrt/feeds.conf.default
-          cd openwrt && cp -f ../diy-part1.sh ./ && chmod +x ./diy-part1.sh && ./diy-part1.sh
+          git clone \
+            --depth=1 \
+            -b openwrt-25.12 \
+            https://github.com/openwrt/openwrt.git
+
+          sed -i \
+            's|https://git.openwrt.org/feed/|https://github.com/openwrt/|g' \
+            openwrt/feeds.conf.default
+
+          sed -i \
+            's|https://git.openwrt.org/project/|https://github.com/openwrt/|g' \
+            openwrt/feeds.conf.default
+
+          cd openwrt
+
+          cp -f ../diy-part1.sh ./
+          chmod +x ./diy-part1.sh
+          ./diy-part1.sh
 
       - name: 🔄 更新并安装 Feeds
         working-directory: ./openwrt
         run: |
-          ./scripts/feeds update -a && ./scripts/feeds install -a
-          cp -f ../diy-part2.sh ./diy-part2.sh && chmod +x ./diy-part2.sh && ./diy-part2.sh
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          cp -f ../diy-part2.sh ./diy-part2.sh
+          chmod +x ./diy-part2.sh
+          ./diy-part2.sh
 
       - name: 📂 加载补丁文件
         working-directory: ./openwrt
         run: |
           cp -rf "$GITHUB_WORKSPACE/scripts/"* ./
-          cp -rf "$GITHUB_WORKSPACE/patches/IGC/996-intel-igc-i225-i226-disable-eee.patch" ./target/linux/x86/patches-6.12/
-          cp -rf "$GITHUB_WORKSPACE/patches/BBRv3/"* ./target/linux/generic/backport-6.12/
-          cp -rf "$GITHUB_WORKSPACE/patches/LRNG/"* ./target/linux/generic/hack-6.12/
+
+          cp -rf \
+            "$GITHUB_WORKSPACE/patches/IGC/996-intel-igc-i225-i226-disable-eee.patch" \
+            ./target/linux/x86/patches-6.12/
+
+          cp -rf \
+            "$GITHUB_WORKSPACE/patches/BBRv3/"* \
+            ./target/linux/generic/backport-6.12/
+
+          cp -rf \
+            "$GITHUB_WORKSPACE/patches/LRNG/"* \
+            ./target/linux/generic/hack-6.12/
 
       - name: ⚙️ 加载自定义配置
         working-directory: ./openwrt
@@ -91,46 +293,79 @@ jobs:
 
       - name: 📚 下载软件包
         run: |
-          cd openwrt && make download -j8
+          cd openwrt
+
+          make download -j8
+
+          find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
       - name: 🔨 编译固件
         run: |
-          cd openwrt && make -j$(nproc) || make -j1 V=s
+          cd openwrt
+
+          echo "$(nproc) thread compile"
+
+          make -j$(nproc) || make -j1 V=s
 
       - name: 📝 生成内核和 OTA 索引
         run: |          
           cd openwrt
           cp -f ../diy-part3.sh ./diy-part3.sh
           chmod +x ./diy-part3.sh
-          ./diy-part3.sh          
-
-      - name: 📦 整理产物与生成说明 (消除重复逻辑)
+          ./diy-part3.sh         
+          
+      # ==========================================================
+      # 生成 Release Tag / Release Notes
+      # ==========================================================
+      - name: 📦 整理固件与生成 Release 说明
         id: release_info
         run: |
           cd openwrt/bin/targets/*/*
+
           rm -rf packages
 
           FIRMWARE_DIR="${GITHUB_WORKSPACE}/firmware_out"
           mkdir -p "$FIRMWARE_DIR"
 
+          # 使用秒级时间，避免同一分钟重复构建产生 Tag 冲突
           RELEASE_TAG="ZeroWrt_$(date +'%Y.%m.%d-%H%M%S')"
           BUILD_DATE=$(date +"%Y-%m-%d %H:%M:%S")
 
+          # 输出给 build Job
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-          echo "kmod_name=$KMOD_PKG_NAME" >> "$GITHUB_OUTPUT"
 
+          # ======================================================
+          # 只保留指定的 4 个 x86-64 固件
+          # ======================================================
           FIRMWARE_FILES=(
             "openwrt-x86-64-generic-ext4-combined.img.gz"
             "openwrt-x86-64-generic-ext4-combined-efi.img.gz"
             "openwrt-x86-64-generic-squashfs-combined.img.gz"
             "openwrt-x86-64-generic-squashfs-combined-efi.img.gz"
-          ]
+          )
 
-          # 生成 SHA256 校验文件
+          echo "::group::🔍 检查固件文件"
+
+          for file in "${FIRMWARE_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ 固件文件不存在: $file"
+              exit 1
+            fi
+
+            echo "✅ $file"
+          done
+
+          echo "::endgroup::"
+
+          # ======================================================
+          # 只对这 4 个固件生成 SHA256
+          # ======================================================
           sha256sum "${FIRMWARE_FILES[@]}" > sha256sums.txt
 
+          # ======================================================
           # 生成 Release Notes
+          # ======================================================
           cat <<EOF > release_notes.md
           # 🚀 ZeroWrt 固件发布报告
 
@@ -160,28 +395,55 @@ jobs:
           > 💡 **提示**：建议刷机前核对文件 SHA256 校验码，确保固件传输完整无损。
           EOF
 
-          # 复制固件及生成物到输出目录
+          # ======================================================
+          # 只复制 4 个固件 + SHA256 + Release Notes
+          # ======================================================
           cp "${FIRMWARE_FILES[@]}" "$FIRMWARE_DIR/"
           cp sha256sums.txt "$FIRMWARE_DIR/"
           cp release_notes.md "$FIRMWARE_DIR/"
-          
-          # 复制上一级目录生成的 ota.json 和 kmod 压缩包
-          if [ -f "../ota.json" ]; then
-            cp "../ota.json" "$FIRMWARE_DIR/"
-          fi
-          if [ -n "$KMOD_PKG_NAME" ] && [ -f "../${KMOD_PKG_NAME}.tar.gz" ]; then
-            cp "../${KMOD_PKG_NAME}.tar.gz" "$FIRMWARE_DIR/"
-          fi
 
-      - name: 📤 上传统一产物 Artifact
-        uses: actions/upload-artifact@v4
+          echo -e "\n\e[1;36m=================================================================\e[0m"
+          echo -e "\e[1;33m       📦 固件产物整理完毕与发布准备报告 (RELEASE SUMMARY)\e[0m"
+          echo -e "\e[1;36m=================================================================\e[0m"
+
+          echo -e "\e[1;32m[📁 固件输出路径]\e[0m : $FIRMWARE_DIR"
+          echo -e "\e[1;32m[🏷️ 发布 Tag 标签]\e[0m : \e[1m${RELEASE_TAG}\e[0m"
+
+          echo -e "\n\e[1;35m[📦 固件文件]\e[0m"
+
+          for file in "${FIRMWARE_FILES[@]}"; do
+            SIZE=$(du -h "$file" | awk '{print $1}')
+            echo "  │ $file [$SIZE]"
+          done
+
+          echo -e "\n\e[1;35m[📄 SHA256 校验码]\e[0m"
+          cat sha256sums.txt | sed 's/^/  │ /'
+
+          echo -e "\n\e[1;35m[📁 Artifact 内容]\e[0m"
+          ls -lh "$FIRMWARE_DIR"
+
+          echo -e "\e[1;36m=================================================================\e[0m\n"
+
+      # ==========================================================
+      # Artifact：只上传 4 个固件
+      # ==========================================================
+      - name: 📤 上传固件 Artifact
+        uses: actions/upload-artifact@v7
         with:
-          name: ZeroWrt_All_Outputs
-          path: ./firmware_out/*
+          name: ZeroWrt_Firmware
+          path: |
+            ./firmware_out/openwrt-x86-64-generic-ext4-combined.img.gz
+            ./firmware_out/openwrt-x86-64-generic-ext4-combined-efi.img.gz
+            ./firmware_out/openwrt-x86-64-generic-squashfs-combined.img.gz
+            ./firmware_out/openwrt-x86-64-generic-squashfs-combined-efi.img.gz
 
+  # ============================================================
+  # GitHub Release
+  # ============================================================
   release:
     name: 🚀 发布 GitHub Release
     needs: build
+
     runs-on: ubuntu-24.04
 
     permissions:
@@ -191,39 +453,102 @@ jobs:
     if: needs.build.result == 'success'
 
     steps:
-      - name: 📥 下载统一产物 Artifact
-        uses: actions/download-artifact@v4
+      # ========================================================
+      # 下载 Artifact
+      # ========================================================
+      - name: 📥 下载固件 Artifact
+        uses: actions/download-artifact@v8
         with:
-          name: ZeroWrt_All_Outputs
+          name: ZeroWrt_Firmware
           path: ./firmware
 
-      - name: 🚀 发布主固件与 OTA 到动态 Tag ($RELEASE_TAG)
+      # ========================================================
+      # 从 Artifact 中恢复 SHA256 / Release Notes
+      # ========================================================
+      #
+      # Artifact 只包含 4 个固件，因此这里重新计算 SHA256
+      # 并重新生成 Release Notes。
+      #
+      - name: 🔐 生成 SHA256 与 Release Notes
+        run: |
+          cd ./firmware
+
+          FIRMWARE_FILES=(
+            "openwrt-x86-64-generic-ext4-combined.img.gz"
+            "openwrt-x86-64-generic-ext4-combined-efi.img.gz"
+            "openwrt-x86-64-generic-squashfs-combined.img.gz"
+            "openwrt-x86-64-generic-squashfs-combined-efi.img.gz"
+          )
+
+          echo "::group::🔍 检查 Artifact 固件"
+
+          for file in "${FIRMWARE_FILES[@]}"; do
+            if [ ! -f "$file" ]; then
+              echo "❌ Artifact 中缺少固件: $file"
+              exit 1
+            fi
+
+            echo "✅ $file"
+          done
+
+          echo "::endgroup::"
+
+          # 生成 SHA256
+          sha256sum "${FIRMWARE_FILES[@]}" > sha256sums.txt
+
+          BUILD_DATE=$(date +"%Y-%m-%d %H:%M:%S")
+          RELEASE_TAG="${{ needs.build.outputs.release_tag }}"
+
+          cat <<EOF > release_notes.md
+          # 🚀 ZeroWrt 固件发布报告
+
+          | 配置项目 | 详细信息 |
+          | :--- | :--- |
+          | 🕒 **编译时间** | \`${BUILD_DATE}\` |
+          | 🏷️ **发布标签** | \`${RELEASE_TAG}\` |
+          | 💻 **目标平台** | \`x86-64 Generic\` |
+          | ⚡ **默认 IP** | \`192.168.1.1\` |
+          | 🔑 **默认密码** | \`none (无密码)\` |
+
+          ### 📦 固件列表
+
+          | 固件 | 类型 |
+          | :--- | :--- |
+          | \`openwrt-x86-64-generic-ext4-combined.img.gz\` | EXT4 / BIOS |
+          | \`openwrt-x86-64-generic-ext4-combined-efi.img.gz\` | EXT4 / EFI |
+          | \`openwrt-x86-64-generic-squashfs-combined.img.gz\` | SquashFS / BIOS |
+          | \`openwrt-x86-64-generic-squashfs-combined-efi.img.gz\` | SquashFS / EFI |
+
+          ### 🔐 SHA256 校验码
+
+          \`\`\`text
+          $(cat sha256sums.txt)
+          \`\`\`
+
+          > 💡 **提示**：建议刷机前核对文件 SHA256 校验码，确保固件传输完整无损。
+          EOF
+
+          echo "::group::📄 SHA256"
+          cat sha256sums.txt
+          echo "::endgroup::"
+
+      # ========================================================
+      # GitHub Release
+      # 只发布 4 个固件 + sha256sums.txt
+      # ========================================================
+      - name: 🚀 发布到 Releases
         uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ needs.build.outputs.release_tag }}
           name: ${{ needs.build.outputs.release_tag }}
           body_path: ./firmware/release_notes.md
+
           files: |
             ./firmware/openwrt-x86-64-generic-ext4-combined.img.gz
             ./firmware/openwrt-x86-64-generic-ext4-combined-efi.img.gz
             ./firmware/openwrt-x86-64-generic-squashfs-combined.img.gz
             ./firmware/openwrt-x86-64-generic-squashfs-combined-efi.img.gz
             ./firmware/sha256sums.txt
-            ./firmware/ota.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 🚀 发布内核驱动 (kmod) 到持久化 Tag (kmod-openwrt-25.12)
-        uses: softprops/action-gh-release@v3.0.3
-        with:
-          tag_name: kmod-openwrt-25.12
-          name: OpenWrt 25.12 核心驱动包 (kmod)
-          body: |
-            ### 📦 内核驱动依赖包仓库
-            - 本 Release 长期保存与当前编译版本匹配的内核模块驱动包（kmod）。
-            - 对应内核版本哈希：\`${{ needs.build.outputs.kmod_pkg_name }}\`
-          files: |
-            ./firmware/${{ needs.build.outputs.kmod_pkg_name }}.tar.gz
-          <b><font color=red>allow_updates: true</font></b>
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
