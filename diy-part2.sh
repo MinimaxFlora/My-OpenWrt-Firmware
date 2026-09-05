@@ -93,6 +93,7 @@ REMOVE_PATHS=(
     "feeds/packages/utils/containerd"
     "feeds/packages/utils/runc"
     "feeds/luci/applications/luci-app-sqm"
+    "feeds/packages/net/sqm-scripts"
     "feeds/luci/applications/luci-app-dockerman"
     "feeds/luci/applications/luci-app-filemanager"
 )
@@ -282,6 +283,11 @@ sed -i 's/log_stdout:bool:1/log_stdout:bool:0/g;s/log_stderr:bool:1/log_stderr:b
 pushd feeds/luci >/dev/null
     curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/NATMAP/0001-luci-app-natmap-add-default-STUN-server-lists.patch" | patch -p1
 popd >/dev/null
+
+# --- SQM ---
+log_info "配置 SQM 并更新 sqm-scripts Makefile..."
+mkdir -p feeds/packages/net/sqm-scripts
+curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/SQM/sqm-scripts/Makefile" > feeds/packages/net/sqm-scripts/Makefile
 
 # --- FRPC ---
 log_info "配置 FRPC..."
