@@ -1,6 +1,6 @@
 <div align="center">
 
-<img width="850" src="./doc/zerowrt.webp"/>
+<img width="768" src="./doc/zerowrt.webp"/>
 
 **High-performance OpenWrt 25.12 firmware for x86_64**
 
