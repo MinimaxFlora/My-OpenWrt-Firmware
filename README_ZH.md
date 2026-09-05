@@ -1,6 +1,6 @@
 <div align="center">
 
-![zerowrt](./doc/zerowrt.webp)
+<img width="850" src="./doc/zerowrt.webp"/>
 
 **面向 x86_64 的高性能 OpenWrt 25.12 固件**
 
