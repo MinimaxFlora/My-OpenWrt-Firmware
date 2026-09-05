@@ -240,9 +240,12 @@ done
 TTYD_JSON="feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json"
 if [ -f "$TTYD_JSON" ]; then
     sed -i 's#"admin/services/#"admin/system/#g' "$TTYD_JSON"
+    
+    # 修复点: 使用换行符(\n)与纯空格替换，避免跨平台的 \t 解析错误
     if ! grep -q '"order": 50' "$TTYD_JSON"; then
-        sed -i '/"admin\/system\/ttyd": {/a \		"order": 50,' "$TTYD_JSON"
+        sed -i 's/"admin\/system\/ttyd": {/"admin\/system\/ttyd": {\n        "order": 50,/g' "$TTYD_JSON"
     fi
+    
     log_info "重定向菜单 [服务 -> 系统]: ${CLR_GRAY}$(basename "$TTYD_JSON")${CLR_RESET}"
 fi
 
