@@ -283,6 +283,7 @@ jobs:
         run: |
           cp "$GITHUB_WORKSPACE/.config" .config
           cp -rf "$GITHUB_WORKSPACE/files" ./
+          find ./files -type d -exec chmod +x {} \;
           make defconfig
 
       - name: 🗃️ 编译缓存
