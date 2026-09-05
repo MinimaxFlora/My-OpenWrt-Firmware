@@ -247,7 +247,7 @@ jobs:
       # Artifact：只上传 4 个固件
       # ==========================================================
       - name: 📤 上传固件 Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ZeroWrt_Firmware
           path: |
