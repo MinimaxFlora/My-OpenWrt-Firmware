@@ -308,16 +308,22 @@ jobs:
 
           make -j$(nproc) || make -j1 V=s
 
+      # ==========================================================
+      # 生成 Release Tag（秒级时间戳）
+      # 供 diy-part3.sh（ota.json 下载地址）与 release_info 步骤复用，避免重复计算
+      # ==========================================================
+      - name: 🏷️ 生成发布 Tag
+        run: |
+          RELEASE_TAG="ZeroWrt_$(date +'%Y.%m.%d-%H%M%S')"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo -e "\e[1;32m[🏷️] 本次构建发布 Tag: ${RELEASE_TAG}\e[0m"
+
       - name: 📝 生成内核和 OTA 索引
-        run: |          
+        run: |
           cd openwrt
           cp -f ../diy-part3.sh ./diy-part3.sh
           chmod +x ./diy-part3.sh
-          ./diy-part3.sh         
-          
-      # ==========================================================
-      # 生成 Release Tag / Release Notes
-      # ==========================================================
+          ./diy-part3.sh
       - name: 📦 整理固件与生成 Release 说明
         id: release_info
         run: |
@@ -328,8 +334,7 @@ jobs:
           FIRMWARE_DIR="${GITHUB_WORKSPACE}/firmware_out"
           mkdir -p "$FIRMWARE_DIR"
 
-          # 使用秒级时间，避免同一分钟重复构建产生 Tag 冲突
-          RELEASE_TAG="ZeroWrt_$(date +'%Y.%m.%d-%H%M%S')"
+          # Release Tag 已在上一步「🏷️ 生成发布 Tag」生成并注入环境变量，此处直接复用
           BUILD_DATE=$(date +"%Y-%m-%d %H:%M:%S")
 
           # 输出给 build Job
@@ -402,6 +407,16 @@ jobs:
           cp sha256sums.txt "$FIRMWARE_DIR/"
           cp release_notes.md "$FIRMWARE_DIR/"
 
+          # 附带 diy-part3.sh 生成的 OTA 索引与 kmod 压缩包（位于 openwrt/ 目录）
+          cp -f "$GITHUB_WORKSPACE/openwrt/ota.json" "$FIRMWARE_DIR/" 2>/dev/null || true
+
+          if [ -n "$KMOD_TAR_NAME" ] && [ -f "$GITHUB_WORKSPACE/openwrt/${KMOD_TAR_NAME}" ]; then
+            cp -f "$GITHUB_WORKSPACE/openwrt/${KMOD_TAR_NAME}" "$FIRMWARE_DIR/"
+            echo "✅ kmod 压缩包: ${KMOD_TAR_NAME}"
+          else
+            echo "⚠️ 未找到 kmod 压缩包（KMOD_TAR_NAME=${KMOD_TAR_NAME:-空}），本次将只发布固件与 OTA 索引"
+          fi
+
           echo -e "\n\e[1;36m=================================================================\e[0m"
           echo -e "\e[1;33m       📦 固件产物整理完毕与发布准备报告 (RELEASE SUMMARY)\e[0m"
           echo -e "\e[1;36m=================================================================\e[0m"
@@ -432,10 +447,7 @@ jobs:
         with:
           name: ZeroWrt_Firmware
           path: |
-            ./firmware_out/openwrt-x86-64-generic-ext4-combined.img.gz
-            ./firmware_out/openwrt-x86-64-generic-ext4-combined-efi.img.gz
-            ./firmware_out/openwrt-x86-64-generic-squashfs-combined.img.gz
-            ./firmware_out/openwrt-x86-64-generic-squashfs-combined-efi.img.gz
+            ./firmware_out/*
 
   # ============================================================
   # GitHub Release
@@ -463,78 +475,8 @@ jobs:
           path: ./firmware
 
       # ========================================================
-      # 从 Artifact 中恢复 SHA256 / Release Notes
-      # ========================================================
-      #
-      # Artifact 只包含 4 个固件，因此这里重新计算 SHA256
-      # 并重新生成 Release Notes。
-      #
-      - name: 🔐 生成 SHA256 与 Release Notes
-        run: |
-          cd ./firmware
-
-          FIRMWARE_FILES=(
-            "openwrt-x86-64-generic-ext4-combined.img.gz"
-            "openwrt-x86-64-generic-ext4-combined-efi.img.gz"
-            "openwrt-x86-64-generic-squashfs-combined.img.gz"
-            "openwrt-x86-64-generic-squashfs-combined-efi.img.gz"
-          )
-
-          echo "::group::🔍 检查 Artifact 固件"
-
-          for file in "${FIRMWARE_FILES[@]}"; do
-            if [ ! -f "$file" ]; then
-              echo "❌ Artifact 中缺少固件: $file"
-              exit 1
-            fi
-
-            echo "✅ $file"
-          done
-
-          echo "::endgroup::"
-
-          # 生成 SHA256
-          sha256sum "${FIRMWARE_FILES[@]}" > sha256sums.txt
-
-          BUILD_DATE=$(date +"%Y-%m-%d %H:%M:%S")
-          RELEASE_TAG="${{ needs.build.outputs.release_tag }}"
-
-          cat <<EOF > release_notes.md
-          # 🚀 ZeroWrt 固件发布报告
-
-          | 配置项目 | 详细信息 |
-          | :--- | :--- |
-          | 🕒 **编译时间** | \`${BUILD_DATE}\` |
-          | 🏷️ **发布标签** | \`${RELEASE_TAG}\` |
-          | 💻 **目标平台** | \`x86-64 Generic\` |
-          | ⚡ **默认 IP** | \`192.168.1.1\` |
-          | 🔑 **默认密码** | \`none (无密码)\` |
-
-          ### 📦 固件列表
-
-          | 固件 | 类型 |
-          | :--- | :--- |
-          | \`openwrt-x86-64-generic-ext4-combined.img.gz\` | EXT4 / BIOS |
-          | \`openwrt-x86-64-generic-ext4-combined-efi.img.gz\` | EXT4 / EFI |
-          | \`openwrt-x86-64-generic-squashfs-combined.img.gz\` | SquashFS / BIOS |
-          | \`openwrt-x86-64-generic-squashfs-combined-efi.img.gz\` | SquashFS / EFI |
-
-          ### 🔐 SHA256 校验码
-
-          \`\`\`text
-          $(cat sha256sums.txt)
-          \`\`\`
-
-          > 💡 **提示**：建议刷机前核对文件 SHA256 校验码，确保固件传输完整无损。
-          EOF
-
-          echo "::group::📄 SHA256"
-          cat sha256sums.txt
-          echo "::endgroup::"
-
-      # ========================================================
-      # GitHub Release
-      # 只发布 4 个固件 + sha256sums.txt
+      # GitHub Release：发布 4 个固件 + sha256sums.txt + ota.json
+      # (上述文件均已在 build Job 生成并随 Artifact 传入，此处不重复生成)
       # ========================================================
       - name: 🚀 发布到 Releases
         uses: softprops/action-gh-release@v3.0.3
@@ -542,6 +484,7 @@ jobs:
           tag_name: ${{ needs.build.outputs.release_tag }}
           name: ${{ needs.build.outputs.release_tag }}
           body_path: ./firmware/release_notes.md
+          overwrite: true
 
           files: |
             ./firmware/openwrt-x86-64-generic-ext4-combined.img.gz
@@ -549,6 +492,27 @@ jobs:
             ./firmware/openwrt-x86-64-generic-squashfs-combined.img.gz
             ./firmware/openwrt-x86-64-generic-squashfs-combined-efi.img.gz
             ./firmware/sha256sums.txt
+            ./firmware/ota.json
 
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ========================================================
+      # kmod 滚动 Tag：上传本次编译的内核驱动压缩包
+      # ========================================================
+      - name: 🚀 发布内核驱动 (kmod) 到滚动 Tag (kmod-openwrt-25.12)
+        if: hashFiles('firmware/*.tar.gz') != ''
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          tag_name: kmod-openwrt-25.12
+          name: kmod-openwrt-25.12
+          body: |
+            ### 📦 OpenWrt 25.12 x86_64 内核驱动包 (kmod)
+
+            - 本 Release 为滚动 Tag，每次构建自动上传与当前内核匹配的 kmod 压缩包。
+            - 压缩包内含「内核版本~哈希-r1」目录及全部 kmod/apk 依赖，需配合对应的 `ZeroWrt_*` 固件使用。
+          files: |
+            ./firmware/*.tar.gz
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
