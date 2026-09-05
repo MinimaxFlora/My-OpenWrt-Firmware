@@ -1,6 +1,6 @@
 <div align="center">
 
-# ZeroWrt
+![zerowrt](./doc/zerowrt.webp)
 
 **High-performance OpenWrt 25.12 firmware for x86_64**
 
@@ -213,6 +213,7 @@ My-OpenWrt-Firmware/
 │   ├── LUCI/                        # Status / system UI patches
 │   ├── FRPC/  NATMAP/  GENERIC/
 │   └── README.md
+├── doc/zerowrt.webp                 # README banner
 ├── scripts/                         # kmod signing helpers
 ├── LICENSE                          # GPL-2.0
 └── .github/

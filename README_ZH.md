@@ -1,6 +1,6 @@
 <div align="center">
 
-# ZeroWrt
+![zerowrt](./doc/zerowrt.webp)
 
 **面向 x86_64 的高性能 OpenWrt 25.12 固件**
 
@@ -213,6 +213,7 @@ My-OpenWrt-Firmware/
 │   ├── LUCI/                        # 状态页 / 系统设置补丁
 │   ├── FRPC/  NATMAP/  GENERIC/
 │   └── README.md
+├── doc/zerowrt.webp                 # README 头图
 ├── scripts/                         # kmod 签名辅助
 ├── LICENSE                          # GPL-2.0
 └── .github/
