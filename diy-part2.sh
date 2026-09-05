@@ -231,7 +231,7 @@ TO_NETWORK_JSONS=(
 
 for json in "${TO_NETWORK_JSONS[@]}"; do
     if [ -f "$json" ]; then
-        sed -i 's#"admin/services/"#"admin/network/"#g; s#"target": "admin/services/#"target": "admin/network/#g' "$json"
+        sed -i 's#"admin/services/#"admin/network/#g' "$json"
         log_info "重定向菜单 [服务 -> 网络]: ${CLR_GRAY}$(basename "$json")${CLR_RESET}"
     fi
 done
@@ -239,9 +239,9 @@ done
 # 重定向 TTYD 至 [系统] 菜单 (admin/services -> admin/system) 并插入 order 属性
 TTYD_JSON="feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json"
 if [ -f "$TTYD_JSON" ]; then
-    sed -i 's#"admin/services/"#"admin/system/"#g; s#"target": "admin/services/#"target": "admin/system/#g' "$TTYD_JSON"
-    if ! grep -q '"order":' "$TTYD_JSON"; then
-        sed -i '/"title":/a \		"order": 50,' "$TTYD_JSON"
+    sed -i 's#"admin/services/#"admin/system/#g' "$TTYD_JSON"
+    if ! grep -q '"order": 50' "$TTYD_JSON"; then
+        sed -i '/"admin\/system\/ttyd": {/a \		"order": 50,' "$TTYD_JSON"
     fi
     log_info "重定向菜单 [服务 -> 系统]: ${CLR_GRAY}$(basename "$TTYD_JSON")${CLR_RESET}"
 fi
