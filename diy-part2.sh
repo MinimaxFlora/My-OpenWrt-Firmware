@@ -212,28 +212,39 @@ sed -i 's/1.openwrt.pool.ntp.org/ntp2.aliyun.com/g' package/base-files/files/bin
 sed -i 's/2.openwrt.pool.ntp.org/time1.cloud.tencent.com/g' package/base-files/files/bin/config_generate
 sed -i 's/3.openwrt.pool.ntp.org/time2.cloud.tencent.com/g' package/base-files/files/bin/config_generate
 
-# --- Services Logging & TTYD Optimization ---
-log_info "收紧服务日志输出，调整 TTYD 菜单位置..."
+# --- Services Logging Optimization ---
+log_info "收紧服务日志输出，减少系统 IO..."
 sed -i 's/stderr 1/stderr 0/g' feeds/packages/net/nlbwmon/files/nlbwmon.init
 sed -i 's/syslog/none/g' feeds/packages/admin/netdata/files/netdata.conf
-sed -i 's/services/system/g' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
-sed -i '3 a\t\t"order": 50,' feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json
 sed -i 's/procd_set_param stdout 1/procd_set_param stdout 0/g' feeds/packages/utils/ttyd/files/ttyd.init
 sed -i 's/procd_set_param stderr 1/procd_set_param stderr 0/g' feeds/packages/utils/ttyd/files/ttyd.init
 
-# --- LuCI Menu Redirection (Services -> Network) ---
-log_info "调整部分 LuCI 应用菜单分类至网络菜单..."
-MENU_JSONS=(
+# --- LuCI Menu Categorization & Redirection ---
+log_info "调整 LuCI 应用菜单分类与位置..."
+
+# 重定向至 [网络] 菜单 (admin/services -> admin/network)
+TO_NETWORK_JSONS=(
     "package/new/custom/luci-app-socat/root/usr/share/luci/menu.d/luci-app-socat.json"
     "package/new/custom/luci-app-netspeedtest/root/usr/share/luci/menu.d/luci-app-netspeedtest.json"
+    "feeds/luci/applications/luci-app-nlbwmon/root/usr/share/luci/menu.d/luci-app-nlbwmon.json"
 )
 
-for json in "${MENU_JSONS[@]}"; do
+for json in "${TO_NETWORK_JSONS[@]}"; do
     if [ -f "$json" ]; then
         sed -i 's#"admin/services/"#"admin/network/"#g; s#"target": "admin/services/#"target": "admin/network/#g' "$json"
-        log_info "已重定向菜单路径: ${CLR_GRAY}$(basename "$json")${CLR_RESET}"
+        log_info "重定向菜单 [服务 -> 网络]: ${CLR_GRAY}$(basename "$json")${CLR_RESET}"
     fi
 done
+
+# 重定向 TTYD 至 [系统] 菜单 (admin/services -> admin/system) 并插入 order 属性
+TTYD_JSON="feeds/luci/applications/luci-app-ttyd/root/usr/share/luci/menu.d/luci-app-ttyd.json"
+if [ -f "$TTYD_JSON" ]; then
+    sed -i 's#"admin/services/"#"admin/system/"#g; s#"target": "admin/services/#"target": "admin/system/#g' "$TTYD_JSON"
+    if ! grep -q '"order":' "$TTYD_JSON"; then
+        sed -i '/"title":/a \		"order": 50,' "$TTYD_JSON"
+    fi
+    log_info "重定向菜单 [服务 -> 系统]: ${CLR_GRAY}$(basename "$TTYD_JSON")${CLR_RESET}"
+fi
 
 # --- Web Engine (Nginx / uWSGI / Rpcd) Tuning ---
 log_info "切换 Web 引擎至 Nginx，全面优化 RPC 与并发响应..."
