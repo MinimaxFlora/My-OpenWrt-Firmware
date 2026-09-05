@@ -1,5 +1,13 @@
 #!/bin/sh
 
+. /etc/os-release
+. /lib/functions/uci-defaults.sh
+
+[ $(uname -m) = "x86_64" ] && alias board_name="echo x86_64"
+
+# OTA 在线更新
+OTA_URL="https://api.kejizero.xyz/openwrt-25.12/ota.json"
+
 # 时区与主机名
 uci -q set system.@system[0].hostname='ZeroWrt'
 uci set system.@system[0].timezone=CST-8
@@ -43,3 +51,12 @@ if [ $(uci -q get luci.diag.ping) = "openwrt.org" ]; then
     uci set luci.diag.route='www.qq.com'
     uci commit luci
 fi
+
+# 关闭 coremark
+sed -i '/coremark/d' /etc/crontabs/root
+crontab /etc/crontabs/root
+
+# 清理
+rm -rf /etc/profile.d/busybox-history-file.sh
+
+exit 0
