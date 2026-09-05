@@ -74,8 +74,8 @@ else
     echo -e "${YELLOW}[!] 警告: 未找到本地固件文件，SHA256 将留空。${NC}"
 fi
 
-# 生成 fw.json 格式化输出
-cat > fw.json <<EOF
+# 生成 ota.json 格式化输出
+cat > ota.json <<EOF
 {
   "x86_64": [
     {
