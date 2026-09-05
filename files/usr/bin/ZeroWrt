@@ -1,0 +1,1797 @@
+#!/bin/sh
+# =============================================================================
+#  ZeroWrt-Tools · ZeroWrt x86 固件管理工具箱
+#  ============================================================================
+#  适用固件 : ZeroWrt x86_64 (OpenWrt 25.12 / apk 包管理)
+#  项目仓库 : https://github.com/MinimaxFlora/My-OpenWrt-Firmware
+#  安装位置 : /usr/bin/ZeroWrt  (编译期由 files/usr/bin/ZeroWrt 覆盖进固件)
+#  运行方式 : 输入 ZeroWrt 回车进入交互菜单
+#             ZeroWrt -h 帮助 | -v 版本 | -s 状态面板 | -c 检查固件更新
+#  参考项目 : cattools (https://github.com/miaoermua/cattools)
+#  说明     : 网络类操作完成后若修改了本机 IP,SSH 会话会断开,
+#             请使用新地址重新连接。
+# =============================================================================
+
+# ---- 版本与项目信息 ---------------------------------------------------------
+TOOL_VER="1.2.0"
+PROJECT="MinimaxFlora/My-OpenWrt-Firmware"
+GH_URL="https://github.com/${PROJECT}"
+GH_API="https://api.github.com/repos/${PROJECT}"
+RAW_URL="https://raw.githubusercontent.com/${PROJECT}/master/files/usr/bin/ZeroWrt"
+OTA_TAG_PREFIX="ZeroWrt_"
+DISTFEEDS="/etc/apk/repositories.d/distfeeds.list"
+DISTFEEDS_BAK="${DISTFEEDS}.default"
+WORLD_BACKUP="/root/zerowrt-packages.list"
+BACKUP_DIR="/root"
+
+# ---- 颜色 (仅交互终端启用, 支持 NO_COLOR 关闭) -----------------------------
+RED=""; GREEN=""; YELLOW=""; CYAN=""; BLUE=""; MAGENTA=""; WHITE=""; GRAY=""
+BOLD=""; DIM=""; NC=""
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    RED=$(printf '\033[0;31m');    GREEN=$(printf '\033[0;32m')
+    YELLOW=$(printf '\033[1;33m'); CYAN=$(printf '\033[0;36m')
+    BLUE=$(printf '\033[0;34m');   MAGENTA=$(printf '\033[0;35m')
+    WHITE=$(printf '\033[1;37m');  GRAY=$(printf '\033[0;90m')
+    BOLD=$(printf '\033[1m');      DIM=$(printf '\033[2m')
+    NC=$(printf '\033[0m')
+fi
+
+# ---- 常用提示输出 -----------------------------------------------------------
+ok()   { printf '%s\n' "${GREEN}✔${NC} $*"; }
+warn() { printf '%s\n' "${YELLOW}⚠${NC} $*"; }
+err()  { printf '%s\n' "${RED}✖${NC} $*"; }
+info() { printf '%s\n' "${CYAN}ℹ${NC} $*"; }
+step() { printf '%s\n' "${BLUE}→${NC} $*"; }
+
+dashes="────────────────────────────────────────"
+rule() { printf '%s\n' "${GRAY}${dashes}${NC}"; }
+
+# 菜单分组标题: ── 网络管理 Network ────────────────── (虚线按标题长度伸缩)
+sec() {
+    local t="$1" pad i s
+    pad=$((46 - 4 - $(printf '%s' "$t" | wc -c)))
+    [ "$pad" -lt 4 ] && pad=4
+    s=""
+    i=0
+    while [ "$i" -lt "$pad" ]; do
+        s="${s}─"
+        i=$((i+1))
+    done
+    printf '%s\n' "${CYAN}── ${t} ${GRAY}${s}${NC}"
+}
+
+# 等待回车
+pause() {
+    [ -t 0 ] || return 0
+    printf '%s' "${GRAY}按 [回车] 返回菜单...${NC}"
+    read -r _ || true
+    printf '\n'
+}
+
+# 危险操作确认: 必须输入 yes
+confirm_yes() {
+    printf '%s' "${YELLOW}$* ${BOLD}(输入 yes 确认 / 其他任意键取消): ${NC}"
+    read -r _ans
+    [ "$_ans" = "yes" ]
+}
+
+# 简单确认 y/n, 默认 n
+confirm_yn() {
+    printf '%s' "${YELLOW}$* ${BOLD}[y/N]: ${NC}"
+    read -r _ans
+    [ "$_ans" = "y" ] || [ "$_ans" = "Y" ] || [ "$_ans" = "yes" ]
+}
+
+# ---- 运行环境 ---------------------------------------------------------------
+has() { command -v "$1" >/dev/null 2>&1; }
+detect_pkg_mgr() {
+    if has apk; then echo "apk"
+    elif has opkg; then echo "opkg"
+    else echo ""; fi
+}
+PKG=$(detect_pkg_mgr)
+
+# 静默输入 (读密码)
+_read_silent() {
+    if stty -echo 2>/dev/null; then
+        read -r "$1"
+        stty echo 2>/dev/null
+        printf '\n'
+    else
+        read -r "$1"
+    fi
+}
+
+_valid_ip() {
+    echo "$1" | grep -E '^([0-9]{1,3}\.){3}[0-9]{1,3}$' >/dev/null 2>&1 || return 1
+    echo "$1" | awk -F. '{ if($1>255||$2>255||$3>255||$4>255) exit 1 }'
+}
+
+# =============================================================================
+#  系统信息采集
+# =============================================================================
+fw_version() {
+    if [ -f /etc/ota_version ]; then cat /etc/ota_version 2>/dev/null | tr -d '\n'
+    else printf '%s' "未知(初始镜像)"; fi
+}
+cpu_model() {
+    sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1
+}
+cpu_cores() { grep -c '^processor' /proc/cpuinfo 2>/dev/null; }
+loadavg()   { cat /proc/loadavg 2>/dev/null | awk '{print $1"  "$2"  "$3}'; }
+
+uptime_str() {
+    awk '{ s=$1; d=int(s/86400); h=int((s%86400)/3600); m=int((s%3600)/60)
+           printf "%d天%02d小时%02d分", d, h, m }' /proc/uptime 2>/dev/null
+}
+
+mem_usage() {
+    awk '/^MemTotal:/{t=$2} /^MemAvailable:/{a=$2} END{
+        if(!t){print "N/A"; exit} u=t-a; printf "%dMB / %dMB (%d%%)", u/1024, t/1024, u*100/t }' \
+        /proc/meminfo 2>/dev/null
+}
+
+cpu_temp() {
+    # 优先 coretemp / k10temp, 回退 thermal_zone
+    t=""
+    for d in /sys/class/hwmon/hwmon*; do
+        [ -d "$d" ] || continue
+        n=$(cat "$d/name" 2>/dev/null)
+        case "$n" in
+            coretemp|k10temp|cpu_thermal|zenpower)
+                for f in "$d"/temp*_input; do
+                    [ -f "$f" ] || continue
+                    v=$(cat "$f" 2>/dev/null)
+                    if [ -n "$v" ]; then
+                        # shell 比较可能因空值报错, 交给 awk
+                        t=$(echo "$v $t" | awk '{if($1>($2+0)) print $1; else print $2}')
+                    fi
+                done ;;
+        esac
+    done
+    if [ -z "$t" ] && [ -d /sys/class/thermal ]; then
+        for f in /sys/class/thermal/thermal_zone*/temp; do
+            [ -f "$f" ] || continue
+            v=$(cat "$f" 2>/dev/null)
+            [ -n "$v" ] && t=$(echo "$v $t" | awk '{if($1>($2+0)) print $1; else print $2}')
+        done
+    fi
+    if [ -n "$t" ]; then echo "$((t/1000))°C"; else echo "N/A"; fi
+}
+
+conntrack_cnt() {
+    cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null || echo "-"
+}
+conntrack_max() {
+    cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo "-"
+}
+
+lan_ip()     { uci -q get network.lan.ipaddr 2>/dev/null; }
+lan_ifname() {
+    if ip link show br-lan >/dev/null 2>&1; then echo "br-lan"
+    else uci -q get network.lan.ifname 2>/dev/null | cut -d' ' -f1; fi
+}
+wan_proto() {
+    p=$(uci -q get network.wan.proto 2>/dev/null)
+    [ -z "$p" ] && p="none"
+    echo "$p"
+}
+wan_state() {
+    # ubus 输出为多行 json, 先压成单行再抓 ipv4-address(位于 ipv6 之前)
+    local s ip4
+    if has ubus; then
+        s=$(ubus call network.interface.wan status 2>/dev/null | tr -d '\n ')
+        ip4=$(echo "$s" | grep -o '"address":"[^"]*"' | head -1 | cut -d'"' -f4)
+        [ -n "$ip4" ] && { echo "$ip4"; return; }
+    fi
+    if has ip; then
+        ip -4 addr show 2>/dev/null | awk '
+            /^[0-9]+: (eth|enp|ens|enx)/ { i=$2 }
+            /inet / { if (i != "" && i != "lo:") { split($2,a,"/"); print a[1]; exit } }'
+    fi
+}
+
+# 实时网速: 1 秒采样全部物理网卡 (剔除虚拟网卡避免重复计数)
+net_speed() {
+    local a b ar at br bt dr dt
+    a=$(awk 'NR>2 {
+            gsub(":","",$1)
+            if ($1=="lo") next
+            if ($1 ~ /^(br|docker|veth|zt|tailscale|wg|ppp|tun|sit|ip6tnl|virbr|ifb)/) next
+            rx+=$2; tx+=$10
+        } END { print rx" "tx }' /proc/net/dev 2>/dev/null)
+    sleep 1
+    b=$(awk 'NR>2 {
+            gsub(":","",$1)
+            if ($1=="lo") next
+            if ($1 ~ /^(br|docker|veth|zt|tailscale|wg|ppp|tun|sit|ip6tnl|virbr|ifb)/) next
+            rx+=$2; tx+=$10
+        } END { print rx" "tx }' /proc/net/dev 2>/dev/null)
+    ar=$(echo "$a" | awk '{print $1+0}'); at=$(echo "$a" | awk '{print $2+0}')
+    br=$(echo "$b" | awk '{print $1+0}'); bt=$(echo "$b" | awk '{print $2+0}')
+    dr=$(( (br - ar) / 1024 )); dt=$(( (bt - at) / 1024 ))
+    if [ "$dr" -ge 1024 ]; then drs=$(awk -v v=$dr 'BEGIN{printf "%.2f MB/s", v/1024}')
+    else drs="${dr} KB/s"; fi
+    if [ "$dt" -ge 1024 ]; then dts=$(awk -v v=$dt 'BEGIN{printf "%.2f MB/s", v/1024}')
+    else dts="${dt} KB/s"; fi
+    printf '↓ %s   ↑ %s' "$drs" "$dts"
+}
+
+detect_eth() {
+    ls /sys/class/net 2>/dev/null | grep -E '^(eth|enp|ens|enx)[0-9a-z]*' | sort
+}
+
+# 物理网卡选择器: 成功 echo 网卡名, 失败返回 1
+pick_iface() {
+    local ifs d n
+    ifs=$(detect_eth)
+    [ -n "$ifs" ] || { err "未检测到物理网卡!"; return 1; }
+    printf '%s\n' "${CYAN}检测到的物理网卡:${NC}"
+    n=0
+    for d in $ifs; do
+        n=$((n+1))
+        printf '   %s[%2s]%s %-8s %s\n' "${YELLOW}" "$n" "${NC}" "$d" \
+            "$(cat /sys/class/net/$d/address 2>/dev/null)"
+        eval "dev_$n=$d"
+    done
+    while :; do
+        printf '%s' "${YELLOW}请输入网卡编号 [1-$n]: ${NC}"
+        read -r _pick || return 1
+        case "$_pick" in
+            ''|*[!0-9]*) err "输入无效, 请重试" ;;
+            *)
+                if [ "$_pick" -ge 1 ] 2>/dev/null && [ "$_pick" -le "$n" ] 2>/dev/null; then
+                    eval "echo \"\$dev_$_pick\""
+                    return 0
+                fi
+                err "编号超出范围" ;;
+        esac
+    done
+}
+
+# =============================================================================
+#  菜单绘制
+# =============================================================================
+# 一行菜单: [编号] 英文标签(定宽)  中文说明
+item() {
+    local n="$1" l="$2" d="$3" p
+    p=$(printf '%-18s' "$l")
+    printf '   %s[%2s]%s %s%s%s%s %s%s\n' \
+        "$YELLOW" "$n" "$NC" "$WHITE" "$p" "$NC" "$GRAY" "$d" "$NC"
+}
+
+print_header() {
+    printf '\n'
+    printf '  %s%s %s v%s%s\n' "$BOLD" "$CYAN" "ZeroWrt-Tools" "$TOOL_VER" "$NC"
+    printf '  %s%s%s\n' "$GRAY" "ZeroWrt x86 固件管理工具箱 · 输入编号回车执行 · 0 返回上级/退出" "$NC"
+    rule
+}
+
+main_menu() {
+    sec "网络管理 Network"
+    item 1  "Network_Wizard"    "网络向导: 主路由 / 旁路由 / PPPoE 一键配置"
+    item 2  "Set_IP"            "修改管理 IP / 掩码 / 网关 / DNS"
+    item 3  "APK_Mirrors"       "软件源镜像切换(交大/中科大/清华/阿里/官方)"
+    sec "系统管理 System"
+    item 4  "OTA_Upgrade"       "检查并升级 ZeroWrt 固件(GitHub 发布)"
+    item 5  "Status"            "系统状态面板: 负载 / 内存 / 温度 / 网速"
+    item 6  "Backup_Restore"    "配置与软件包清单 备份 / 还原"
+    item 7  "Services"          "服务管理: 启停 / 开机自启开关"
+    item 8  "Packages"          "插件管理 (apk): 装 / 卸 / 升级 / 搜索"
+    sec "排障与日志 TroubleShoot"
+    item 9  "Diagnostics"       "网络诊断: 连通性 / DNS / IPv6 / 丢包体检"
+    item 10 "Debug_Logs"        "日志收集打包 / 实时日志 / 内核日志"
+    sec "扩展工具 Tools"
+    item 11 "Utilities"         "实用工具: TTYD / SSH / 调频 / BBR / 清理…"
+    item 12 "Danger"            "高级操作: 改密 / 恢复出厂 / 重启 / 磁盘"
+    rule
+    item 0  "Exit"              "退出工具箱"
+    printf '%s' "  ${BOLD}请选择: ${NC}"
+}
+
+# =============================================================================
+#  网络向导
+# =============================================================================
+net_wizard() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}网络向导 Network Wizard${NC}    ${GRAY}ZeroWrt x86${NC}"
+    rule
+    item 1 "Main_Router" "主路由模式: 本机拨号/接光猫, 承担 NAT"
+    item 2 "Bypass_Router" "旁路由模式: 接主路由下, 关 DHCP 作网关"
+    item 3 "Set_IP_Only" "仅修改管理 IP(快速回到默认网段)"
+    item 0 "Back" "返回上一级"
+    printf '%s' "  ${BOLD}选择模式: ${NC}"
+    read -r _w
+    case "$_w" in
+        1) wizard_main ;;
+        2) wizard_bypass ;;
+        3) set_ip_quick ;;
+        *) return ;;
+    esac
+}
+
+# ---- 主路由向导 ----
+wizard_main() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}→ 主路由模式配置${NC}    ${GRAY}(Ctrl+C 可随时中止, 不会写入)${NC}"
+    rule
+    local wan_if all lan_ports p
+    printf '%s\n' "${CYAN}[1/5] 选择 WAN 口(接光猫 / 上级路由的网口):${NC}"
+    wan_if=$(pick_iface) || { pause; return; }
+
+    # 其余网口默认桥接为 LAN
+    all=$(detect_eth)
+    lan_ports=""
+    for p in $all; do
+        [ "$p" = "$wan_if" ] && continue
+        lan_ports="${lan_ports:+${lan_ports} }${p}"
+    done
+    if [ -z "$lan_ports" ]; then
+        warn "仅检测到单个网口: 该场景建议使用 [2] 旁路由模式"
+        pause
+        return
+    fi
+    printf '%s\n' "${CYAN}[2/5] 以下网口将桥接为 LAN:${NC} ${BOLD}$lan_ports${NC}"
+    printf '%s'   "      如需调整请直接输入(空格分隔), 回车 = 使用以上全部: "
+    read -r _lan_custom
+    [ -n "$_lan_custom" ] && lan_ports="$_lan_custom"
+
+    printf '%s\n' "${CYAN}[3/5] WAN 上网方式:${NC}"
+    item 1 "DHCP"   "自动获取 (光猫已拨号 / 上级路由)"
+    item 2 "PPPoE"  "宽带拨号 (需要运营商账号密码)"
+    printf '%s' "      选择 [1/2]: "
+    read -r _wm
+    local proto="dhcp" wan_user="" wan_pass=""
+    if [ "$_wm" = "2" ]; then
+        proto="pppoe"
+        printf '%s' "      宽带账号: "; read -r wan_user
+        printf '%s' "      宽带密码: "; _read_silent wan_pass
+        [ -n "$wan_user" ] || { err "宽带账号不能为空"; pause; return; }
+    fi
+
+    printf '%s\n' "${CYAN}[4/5] LAN 管理地址 (当前 $(lan_ip)):${NC}"
+    printf '%s'   "      直接回车保持不变, 或输入新地址: "
+    read -r lan_new
+    if [ -n "$lan_new" ]; then
+        _valid_ip "$lan_new" || { err "IP 地址格式错误"; pause; return; }
+    else
+        lan_new=$(lan_ip)
+    fi
+
+    printf '%s' "${CYAN}[5/5] 启用 LAN 的 DHCP 服务?${NC} ${BOLD}[Y/n]: ${NC}"
+    read -r _dhcp_ok
+
+    printf '\n'
+    rule
+    printf '%s\n' "${BOLD}  配置预览:${NC}"
+    printf '   %-10s %s\n' "WAN 网口" "$wan_if (${proto})"
+    [ "$proto" = "pppoe" ] && printf '   %-10s %s\n' "宽带账号" "$wan_user"
+    printf '   %-10s %s\n' "LAN 网桥" "br-lan ← $lan_ports"
+    printf '   %-10s %s\n' "LAN 地址" "$lan_new"
+    printf '   %-10s %s\n' "DHCP" "$(case "$_dhcp_ok" in n|N|no) echo 关闭;; *) echo 启用;; esac)"
+    rule
+    printf '%s\n' "${YELLOW}即将写入并重启网络服务(会短暂断网; 修改了 IP 则用新地址重连)${NC}"
+    if confirm_yes "确认应用以上配置?"; then
+        :
+    else
+        printf '%s\n' "${GRAY}已取消, 未做任何修改${NC}"
+        pause
+        return
+    fi
+
+    step "写入 UCI 配置..."
+    uci set network.lan.type='bridge'
+    uci set network.lan.ifname="$lan_ports"
+    uci set network.lan.proto='static'
+    uci set network.lan.ipaddr="$lan_new"
+    uci -q delete network.lan.gateway
+    uci -q delete network.lan.dns
+    uci set network.wan.proto="$proto"
+    uci set network.wan.ifname="$wan_if"
+    uci -q delete network.wan.username
+    uci -q delete network.wan.password
+    if [ "$proto" = "pppoe" ]; then
+        uci set network.wan.username="$wan_user"
+        uci set network.wan.password="$wan_pass"
+    fi
+    case "$_dhcp_ok" in
+        n|N|no) uci set dhcp.lan.ignore='1' ;;
+        *) uci -q delete dhcp.lan.ignore ;;
+    esac
+    uci commit network
+    uci commit dhcp 2>/dev/null
+
+    step "重启网络服务..."
+    /etc/init.d/network restart 2>/dev/null
+    [ -x /etc/init.d/dnsmasq ] && /etc/init.d/dnsmasq restart 2>/dev/null
+    ok "配置完成! 新管理地址: http://$lan_new"
+    if [ "$proto" = "pppoe" ]; then
+        printf '%s\n' "${GRAY}提示: 若拨号失败请检查账密; PPPoE 密码以明文存于 UCI(常规做法)${NC}"
+    fi
+    pause
+}
+
+# ---- 旁路由向导 ----
+wizard_bypass() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}→ 旁路由模式配置${NC}"
+    rule
+    local router_ip subnet dev_ip i
+    printf '%s' "   ${CYAN}[1/3] 请输入主路由网关 IP${NC} (如 192.168.31.1): "
+    read -r router_ip
+    _valid_ip "$router_ip" || { err "IP 格式错误"; pause; return; }
+
+    subnet=$(echo "$router_ip" | cut -d. -f1-3)
+    dev_ip=""
+    info "扫描 ${subnet}.4 ~ ${subnet}.20 中未被占用的地址..."
+    i=4
+    while [ $i -le 20 ]; do
+        if ! ping -c 1 -W 1 "${subnet}.${i}" >/dev/null 2>&1; then
+            dev_ip="${subnet}.${i}"
+            break
+        fi
+        i=$((i+1))
+    done
+    if [ -z "$dev_ip" ]; then
+        printf '%s' "   ${CYAN}[2/3] 未找到空闲地址, 请输入本机 IP${NC}: "
+        read -r dev_ip
+    else
+        printf '%s\n' "   ${GREEN}✔${NC} 找到空闲地址: ${BOLD}$dev_ip${NC}"
+        printf '%s'   "   ${CYAN}[2/3] 直接回车采用, 或输入其他地址${NC}: "
+        read -r _di
+        [ -n "$_di" ] && dev_ip="$_di"
+    fi
+    _valid_ip "$dev_ip" || { err "IP 格式错误"; pause; return; }
+
+    printf '%s\n' "${CYAN}[3/3] 配置要点:${NC}"
+    printf '   %s\n' "   · 本机固定为 ${BOLD}$dev_ip${NC}, 网关/DNS 指向主路由 $router_ip"
+    printf '   %s\n' "   · 关闭本机 DHCP 与 IPv6 下发 (避免地址冲突)"
+    if confirm_yes "确认应用旁路由配置?"; then
+        :
+    else
+        printf '%s\n' "${GRAY}已取消${NC}"
+        pause
+        return
+    fi
+
+    step "写入旁路由配置..."
+    uci set network.lan.proto='static'
+    uci set network.lan.ipaddr="$dev_ip"
+    uci set network.lan.netmask='255.255.255.0'
+    uci set network.lan.gateway="$router_ip"
+    uci set network.lan.dns="$router_ip"
+    uci set dhcp.lan.ignore='1'
+    uci -q delete dhcp.lan.dhcpv6
+    uci -q delete dhcp.lan.ra
+    uci -q delete dhcp.lan.ra_management
+    uci -q delete network.lan.ip6assign
+    uci set network.wan.proto='none'
+    uci -q delete network.wan.ifname
+    uci commit network
+    uci commit dhcp
+
+    step "重启网络..."
+    /etc/init.d/network restart 2>/dev/null
+    /etc/init.d/dnsmasq restart 2>/dev/null
+    ok "旁路由配置完成! 新管理地址: http://$dev_ip"
+    printf '%s\n' "${GRAY}提示: 再到主路由把「网关 / DNS」指向 $dev_ip, 客户端即可全局生效${NC}"
+    pause
+}
+
+# =============================================================================
+#  修改 IP
+# =============================================================================
+set_ip_menu() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}修改管理地址${NC}    ${GRAY}当前 LAN IP: $(lan_ip)${NC}"
+    rule
+    item 1 "IP_Address"    "修改 LAN IP 地址"
+    item 2 "Netmask"       "修改子网掩码"
+    item 3 "Gateway_DNS"   "修改网关 / DNS"
+    item 4 "Reset_Default" "恢复到出厂默认 192.168.1.1"
+    item 0 "Back"          "返回上一级"
+    printf '%s' "  ${BOLD}选择: ${NC}"
+    read -r _ipc
+    case "$_ipc" in
+        1) set_ip_quick ;;
+        2)
+            printf '%s' "  输入新掩码 (如 255.255.255.0): "
+            read -r _m
+            _valid_ip "$_m" || { err "格式错误"; pause; return; }
+            _commit_and_restart "network.lan.netmask" "$_m" ;;
+        3)
+            printf '%s' "  输入网关 (留空跳过): "; read -r _g
+            if [ -n "$_g" ]; then
+                _valid_ip "$_g" || { err "网关格式错误"; pause; return; }
+                uci set network.lan.gateway="$_g"
+            fi
+            printf '%s' "  输入 DNS (多个空格分隔, 留空跳过): "; read -r _dn
+            [ -n "$_dn" ] && uci set network.lan.dns="$_dn"
+            uci commit network
+            step "重启网络..."
+            /etc/init.d/network restart 2>/dev/null
+            ok "网关 / DNS 已更新"
+            pause ;;
+        4)
+            if confirm_yes "恢复 LAN 地址为 192.168.1.1?"; then
+                uci set network.lan.ipaddr='192.168.1.1'
+                _commit_and_restart "network.lan.ipaddr" "192.168.1.1"
+            else
+                pause
+            fi ;;
+        *) return ;;
+    esac
+}
+
+set_ip_quick() {
+    local cur new
+    cur=$(lan_ip)
+    [ -z "$cur" ] && cur="192.168.1.1"
+    printf '%s' "  当前 $cur, 输入新管理地址 (如 192.168.1.4): "
+    read -r new
+    _valid_ip "$new" || { err "IP 格式错误, 未修改"; pause; return; }
+    _commit_and_restart "network.lan.ipaddr" "$new"
+}
+
+# $1=uci 键  $2=值 (均需传); 提交 network 并重启
+_commit_and_restart() {
+    uci set "$1=$2" || { err "写入失败"; pause; return; }
+    uci commit network
+    step "重启网络(会话可能断开, 请用新 IP 重连)..."
+    /etc/init.d/network restart 2>/dev/null
+    ok "已生效"
+    pause
+}
+
+# =============================================================================
+#  软件源镜像
+# =============================================================================
+repo_version() {
+    sed -n -E 's#.*/openwrt/releases/([0-9.]+)/packages.*#\1#p' "$DISTFEEDS" 2>/dev/null | head -1
+}
+
+write_mirror_base() {
+    # $1 = openwrt 镜像根 URL (如 https://mirrors.ustc.edu.cn/openwrt)
+    local ver tmp line base
+    ver=$(repo_version)
+    [ -z "$ver" ] && ver="25.12.5"
+    base=$(echo "$1" | sed 's#/$##')
+    tmp="/tmp/zerowrt-distfeeds.new"
+    [ -f "$DISTFEEDS" ] && [ ! -f "$DISTFEEDS_BAK" ] && cp "$DISTFEEDS" "$DISTFEEDS_BAK"
+    : > "$tmp"
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            http*openwrt/releases/*/packages/*)
+                echo "$line" | sed -E "s#(https?)://[^/]+/openwrt/releases/[^/]+/packages/#\1://${base}/openwrt/releases/${ver}/packages/#" >> "$tmp" ;;
+            *) echo "$line" >> "$tmp" ;;
+        esac
+    done < "$DISTFEEDS"
+    cp "$tmp" "$DISTFEEDS"
+    rm -f "$tmp"
+    ok "已切换软件源 -> ${base} (release: ${ver})"
+}
+
+mirror_menu() {
+    while :; do
+        printf '\n'
+        printf '%s\n' "${BOLD}${CYAN}软件源镜像 APK Mirrors${NC}"
+        rule
+        printf '%s\n' "${GRAY}配置文件: $DISTFEEDS (kmod 扩展源行会自动保留)${NC}"
+        if [ -f "$DISTFEEDS" ]; then
+            printf '%s\n' "${GRAY}当前内容:${NC}"
+            sed 's/^/   /' "$DISTFEEDS" | head -8
+        fi
+        printf '\n'
+        item 1 "SJTU"     "上海交大 (当前默认)"
+        item 2 "USTC"     "中科大"
+        item 3 "TUNA"     "清华"
+        item 4 "Aliyun"   "阿里云"
+        item 5 "Official" "官方 downloads.openwrt.org"
+        item 6 "Custom"   "自定义镜像地址"
+        item 7 "Restore"  "恢复出厂默认源"
+        item 8 "Test"     "测试各源连通性"
+        item 0 "Back"     "返回上一级"
+        printf '%s' "  ${BOLD}选择: ${NC}"
+        read -r _mc || return
+        case "$_mc" in
+            1) _mirror_apply "https://mirror.sjtu.edu.cn/openwrt" ;;
+            2) _mirror_apply "https://mirrors.ustc.edu.cn/openwrt" ;;
+            3) _mirror_apply "https://mirrors.tuna.tsinghua.edu.cn/openwrt" ;;
+            4) _mirror_apply "https://mirrors.aliyun.com/openwrt" ;;
+            5) _mirror_apply "https://downloads.openwrt.org" ;;
+            6)
+                printf '%s' "  输入镜像根 URL (形如 https://mirrors.xxx.cn/openwrt): "
+                read -r _cu
+                [ -n "$_cu" ] && _mirror_apply "$_cu" ;;
+            7)
+                if [ -f "$DISTFEEDS_BAK" ]; then
+                    cp "$DISTFEEDS_BAK" "$DISTFEEDS"
+                    ok "已恢复出厂默认软件源"
+                else
+                    err "未找到出厂默认备份, 可手动编辑 $DISTFEEDS"
+                fi
+                pause ;;
+            8) mirror_test ;;
+            0|q) return ;;
+            *) err "无效选项" ;;
+        esac
+    done
+}
+
+_mirror_apply() {
+    if confirm_yn "切换软件源到 $1 ?"; then
+        write_mirror_base "$1"
+        if confirm_yn "立即 apk update 刷新索引?"; then
+            pm_update
+        fi
+    fi
+    pause
+}
+
+mirror_test() {
+    printf '\n'
+    [ -f "$DISTFEEDS" ] || { err "源文件不存在"; pause; return; }
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            http*)
+                printf '   %-56s ' "$(echo "$line" | sed 's#https\?://##; s#/packages/adb.*##' | cut -c1-56)"
+                code=$(curl -s -o /dev/null -w '%{http_code}' -I -m 6 "$line" 2>/dev/null)
+                case "$code" in
+                    200|206|301|302) printf '%s\n' "${GREEN}✔ ${code}${NC}" ;;
+                    "") printf '%s\n' "${RED}✖ 超时/无法连接${NC}" ;;
+                    *) printf '%s\n' "${YELLOW}⚠ ${code}${NC}" ;;
+                esac ;;
+        esac
+    done < "$DISTFEEDS"
+    pause
+}
+
+# =============================================================================
+#  包管理器封装 (apk / opkg)
+# =============================================================================
+pm_update() {
+    case "$PKG" in
+        apk) apk update ;;
+        opkg) opkg update ;;
+        *) err "未检测到 apk/opkg" ; return 1 ;;
+    esac
+}
+pm_install() {
+    case "$PKG" in
+        apk) apk add "$@" ;;
+        opkg) opkg install "$@" ;;
+        *) err "未检测到包管理器" ; return 1 ;;
+    esac
+}
+pm_remove() {
+    case "$PKG" in
+        apk) apk del "$@" ;;
+        opkg) opkg remove "$@" ;;
+        *) err "未检测到包管理器" ; return 1 ;;
+    esac
+}
+pm_upgrade_all() {
+    case "$PKG" in
+        apk) apk upgrade ;;
+        opkg) opkg upgrade ;;
+        *) err "未检测到包管理器" ; return 1 ;;
+    esac
+}
+pm_search() {
+    case "$PKG" in
+        apk) apk search "$@" 2>/dev/null || apk list 2>/dev/null | grep "$1" ;;
+        opkg) opkg list 2>/dev/null | grep "$1" ;;
+        *) err "未检测到包管理器" ; return 1 ;;
+    esac
+}
+pm_installed_count() {
+    case "$PKG" in
+        apk) apk list --installed 2>/dev/null | wc -l ;;
+        opkg) opkg list-installed 2>/dev/null | wc -l ;;
+        *) echo "0" ;;
+    esac
+}
+world_list() {
+    case "$PKG" in
+        apk) cat /etc/apk/world 2>/dev/null ;;
+        opkg) opkg list-installed 2>/dev/null | awk '{print $1}' ;;
+    esac
+}
+
+# =============================================================================
+#  OTA 检查更新与升级
+# =============================================================================
+ota_latest_release() {
+    # 输出 tag|published_at (GitHub /releases/latest = 最新稳定版)
+    # 注: GitHub API 返回美化排版 JSON, 键与冒号/值之间可能带空格与换行
+    local json tag pub
+    json=$(curl -sfL -m 15 "${GH_API}/releases/latest" 2>/dev/null) || return 1
+    tag=$(echo "$json" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
+    pub=$(echo "$json" | grep -o '"published_at"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 | tr 'T' ' ' | cut -c1-19)
+    [ -z "$tag" ] && return 1
+    echo "${tag}|${pub}"
+}
+ota_asset_count() {
+    curl -sfL -m 15 "${GH_API}/releases/latest" 2>/dev/null |
+        grep -o '"name"[[:space:]]*:[[:space:]]*"[^"]*\.img\.gz"' | wc -l | awk '{print $1}'
+}
+
+ota_check() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}检查 ZeroWrt 固件更新${NC}"
+    rule
+    local local_ver info rtag rpub
+    local_ver=$(fw_version)
+    printf '   %-10s %s\n' "本地版本" "${local_ver}"
+    info "连接 GitHub 查询最新发布..."
+    info=$(ota_latest_release) || { err "无法访问 GitHub API, 请检查网络"; pause; return 1; }
+    rtag=$(echo "$info" | cut -d'|' -f1)
+    rpub=$(echo "$info" | cut -d'|' -f2)
+    case "$rtag" in
+        ${OTA_TAG_PREFIX}*) ;;
+        *) err "最新 Release 并非固件版本: $rtag"; pause; return 1 ;;
+    esac
+    printf '   %-10s %s\n' "最新版本" "${GREEN}${rtag}${NC}"
+    printf '   %-10s %s\n' "发布时间" "${rpub} (UTC)"
+    printf '   %-10s %s\n' "固件镜像" "$(ota_asset_count) 个 (ext4/squashfs × EFI/BIOS)"
+    rule
+    if [ -f /etc/ota_version ] && [ "$(cat /etc/ota_version 2>/dev/null)" = "$rtag" ]; then
+        ok "当前已是最新版本"
+        pause
+        return 0
+    fi
+    if [ ! -f /etc/ota_version ]; then
+        printf '%s\n' "${GRAY}注: 本机未记录安装版本(初始镜像/手动刷写), 以上为最新发布仅供参考${NC}"
+    fi
+    printf '%s\n' "${GREEN}发现新版本!${NC} 更新日志: ${GH_URL}/releases/tag/${rtag}"
+    printf '%s' "${BOLD}立即升级?${NC} ${GRAY}[y/N]: ${NC}"
+    read -r _up
+    case "$_up" in
+        y|Y|yes) ota_upgrade "$rtag" ;;
+        *) printf '%s\n' "${GRAY}已跳过升级${NC}"; pause ;;
+    esac
+}
+
+ota_upgrade() {
+    local rtag=$1 efi img_name dl work free_kb sha act rootfs
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}OTA 升级 → ${rtag}${NC}"
+    rule
+
+    # 引导方式
+    if [ -d /sys/firmware/efi ]; then efi="-efi"
+    else efi=""; fi
+    if [ -d /sys/firmware/efi ]; then
+        info "检测到 EFI 引导"
+    else
+        info "检测到 Legacy/BIOS 引导"
+    fi
+
+    # 根分区格式
+    rootfs="squashfs"
+    if grep -q ' / ext4' /proc/mounts 2>/dev/null; then
+        printf '%s\n' "   当前根分区为 ext4, 选择刷写镜像格式:"
+        item 1 "squashfs" "支持恢复出厂, 推荐(默认)"
+        item 2 "ext4"     "与当前分区一致"
+        printf '%s' "   选择 [1/2]: "
+        read -r _rf
+        [ "$_rf" = "2" ] && rootfs="ext4"
+    fi
+
+    # 是否保留配置
+    item 1 "Keep_Config" "保留配置升级 (推荐)"
+    item 2 "Clean_Flash" "清除配置升级 (等于重置+新固件)"
+    item 3 "Download_Only" "仅下载镜像, 不刷写"
+    printf '%s' "   选择 [1/2/3]: "
+    read -r _kc
+    case "$_kc" in
+        3) ;;
+        2) ;;
+        *) _kc="1" ;;
+    esac
+
+    img_name="openwrt-x86-64-generic-${rootfs}-combined${efi}.img.gz"
+    work="/tmp/zerowrt-ota"
+    rm -rf "$work"; mkdir -p "$work"
+
+    # 空间预检 (/tmp 为内存盘, x86 固件镜像约 240-300MB)
+    free_kb=$(df -k /tmp 2>/dev/null | awk 'NR==2{print $4}')
+    if [ -n "$free_kb" ] && [ "$free_kb" -lt 460800 ]; then
+        warn "/tmp 仅剩 $((free_kb/1024)) MB (内存盘), 镜像约 240-300MB, 空间紧张"
+        confirm_yes "仍继续?" || { rm -rf "$work"; pause; return; }
+    fi
+
+    dl="https://github.com/${PROJECT}/releases/download/${rtag}/${img_name}"
+    info "下载 ${img_name} ..."
+    if ! curl -fL --retry 2 -m 1800 -o "$work/$img_name" "$dl"; then
+        err "下载失败, 请检查网络后重试"
+        rm -rf "$work"
+        pause
+        return
+    fi
+    ok "下载完成: $(du -h "$work/$img_name" 2>/dev/null | cut -f1)"
+
+    # SHA256 校验
+    info "下载 sha256sums.txt 并校验..."
+    if curl -sfL -m 20 -o "$work/sha256sums.txt" \
+        "https://github.com/${PROJECT}/releases/download/${rtag}/sha256sums.txt"; then
+        sha=$(grep -F "$img_name" "$work/sha256sums.txt" | head -1 | awk '{print $1}')
+        if [ -n "$sha" ]; then
+            act=$(sha256sum "$work/$img_name" | awk '{print $1}')
+            if [ "$act" = "$sha" ]; then
+                ok "SHA256 校验通过"
+            else
+                err "SHA256 校验失败! 镜像可能损坏, 已中止"
+                rm -rf "$work"
+                pause
+                return
+            fi
+        else
+            warn "sha256sums.txt 中无该镜像条目, 跳过校验"
+        fi
+    else
+        warn "校验文件下载失败, 跳过 SHA256 校验"
+    fi
+
+    case "$_kc" in
+        3)
+            ok "镜像已保存: $work/$img_name"
+            printf '%s\n' "${GRAY}后续可手动执行: sysupgrade -v $work/$img_name${NC}"
+            pause
+            return ;;
+        2)
+            if confirm_yes "即将【清除配置】刷写, 所有设置将丢失!"; then
+                step "执行 sysupgrade -n ..."
+                sync
+                echo "$rtag" > /etc/ota_version
+                sysupgrade -n -v "$work/$img_name"
+                err "刷写未正常启动, 设备仍在运行"
+                rm -rf "$work"
+                pause
+            else
+                rm -rf "$work"
+                pause
+            fi
+            return ;;
+        *)
+            if confirm_yes "即将刷写新固件(保留配置), 设备自动重启, 期间切勿断电!"; then
+                step "执行 sysupgrade ..."
+                sync
+                echo "$rtag" > /etc/ota_version
+                sysupgrade -v "$work/$img_name"
+                err "刷写未正常启动, 设备仍在运行"
+                rm -rf "$work"
+                pause
+            else
+                rm -rf "$work"
+                pause
+            fi
+            return ;;
+    esac
+}
+
+ota_menu() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}系统更新 OTA Upgrade${NC}"
+    rule
+    item 1 "Check_Update" "联网检查最新发布版本"
+    item 2 "Release_Page" "查看项目 Release 页面(更新日志)"
+    item 3 "Local_Info"   "查看本机固件详细信息"
+    item 0 "Back"         "返回上一级"
+    printf '%s' "  ${BOLD}选择: ${NC}"
+    read -r _om || return
+    case "$_om" in
+        1) ota_check ;;
+        2) info "${GH_URL}/releases"; pause ;;
+        3)
+            printf '\n'
+            [ -f /etc/openwrt_release ] && . /etc/openwrt_release 2>/dev/null
+            printf '   %-10s %s\n' "发行版" "${DISTRIB_ID:-OpenWrt} ${DISTRIB_RELEASE:-?}"
+            printf '   %-10s %s\n' "描述" "${DISTRIB_DESCRIPTION:-?}"
+            printf '   %-10s %s\n' "修订" "${DISTRIB_REVISION:-?}"
+            printf '   %-10s %s\n' "固件版本" "$(fw_version)"
+            printf '   %-10s %s\n' "内核" "$(uname -r)"
+            printf '   %-10s %s\n' "架构" "$(uname -m)"
+            printf '   %-10s %s\n' "包管理" "${PKG:-未检测}"
+            pause ;;
+        0|q) return ;;
+        *) err "无效选项"; pause ;;
+    esac
+}
+
+# =============================================================================
+#  系统状态面板
+# =============================================================================
+status_panel() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}ZeroWrt x86 系统状态${NC}"
+    rule
+    printf '%s\n' "  ${CYAN}── 硬件与系统${NC}"
+    printf '   %-8s %s\n' "CPU" "$(cpu_model) (${BOLD}$(cpu_cores)${NC} 核)"
+    printf '   %-8s %s\n' "内核" "$(uname -r) $(uname -m)"
+    printf '   %-8s %s\n' "固件" "$(fw_version)"
+    printf '   %-8s %s\n' "运行" "$(uptime_str)"
+    printf '   %-8s %s\n' "负载" "$(loadavg) ${GRAY}(1/5/15min)${NC}"
+    printf '%s\n' "  ${CYAN}── 资源占用${NC}"
+    printf '   %-8s %s\n' "内存" "$(mem_usage)"
+    printf '   %-8s %s\n' "温度" "$(cpu_temp) ${GRAY}(N/A 表示无传感器)${NC}"
+    printf '   %-8s %s\n' "连接数" "$(conntrack_cnt)/$(conntrack_max) ${GRAY}条 (conntrack)${NC}"
+    df -h / /tmp /overlay 2>/dev/null | awk 'NR==1{next} {printf "   %-8s %-16s 已用 %-6s 可用 %-6s %s\n","磁盘",$1,$3,$4,$6}'
+    printf '%s\n' "  ${CYAN}── 网络${NC}"
+    printf '   %-8s %s\n' "LAN" "$(lan_ip) ${GRAY}(ifname: $(lan_ifname))${NC}"
+    printf '   %-8s %s\n' "WAN" "${GRAY}$(wan_proto)${NC} $(wan_state)"
+    printf '   %-8s %s\n' "速率" "$(net_speed) ${GRAY}(物理口合计)${NC}"
+    printf '%s\n' "  ${CYAN}── 软件环境${NC}"
+    printf '   %-8s %s\n' "包管理" "${PKG:-未检测到 apk/opkg}"
+    printf '   %-8s %s\n' "软件包" "$(pm_installed_count) 个"
+    rule
+    printf '%s\n' "${GRAY}提示: 状态面板读取 /proc 与 uci, 全部为实时数据${NC}"
+    pause
+}
+
+# =============================================================================
+#  备份与还原
+# =============================================================================
+backup_menu() {
+    while :; do
+        printf '\n'
+        printf '%s\n' "${BOLD}${CYAN}备份与还原 Backup / Restore${NC}"
+        rule
+        item 1 "Backup_Config"    "备份全部配置 (sysupgrade -b)"
+        item 2 "Backup_Packages"  "备份已装软件清单(升级后一键重装)"
+        item 3 "Restore_Config"   "还原配置备份 (sysupgrade -r)"
+        item 4 "Restore_Packages" "按清单重新安装软件包"
+        item 5 "List_Backups"     "查看已有备份文件"
+        item 0 "Back"             "返回上一级"
+        printf '%s' "  ${BOLD}选择: ${NC}"
+        read -r _bm || return
+        case "$_bm" in
+            1)
+                local ts f
+                ts=$(date +%Y%m%d-%H%M%S)
+                f="${BACKUP_DIR}/zerowrt-backup-${ts}.tar.gz"
+                if has sysupgrade && sysupgrade -b "$f" 2>/dev/null; then
+                    ok "配置已备份: $f"
+                else
+                    err "备份失败, 请确认 sysupgrade 可用"
+                fi
+                pause ;;
+            2)
+                local wf
+                wf="${BACKUP_DIR}/zerowrt-packages-$(date +%Y%m%d-%H%M%S).list"
+                world_list > "$wf"
+                ok "软件清单已备份: $wf (共 $(wc -l < "$wf") 项)"
+                pause ;;
+            3)
+                local latest bf
+                latest=$(ls -t ${BACKUP_DIR}/zerowrt-backup-*.tar.gz 2>/dev/null | head -1)
+                printf '%s' "  备份文件路径 [${latest:-/root/xxx.tar.gz}]: "
+                read -r bf
+                [ -z "$bf" ] && bf="$latest"
+                if [ -f "$bf" ]; then
+                    if confirm_yes "还原将重启系统并应用该配置, 继续?"; then
+                        sysupgrade -r -v "$bf"
+                    fi
+                else
+                    err "文件不存在: $bf"
+                fi
+                pause ;;
+            4)
+                local src
+                src="$WORLD_BACKUP"
+                printf '%s' "  清单文件路径 [${src}]: "
+                read -r _wf
+                [ -n "$_wf" ] && src="$_wf"
+                if [ ! -f "$src" ]; then
+                    err "清单不存在: $src"
+                    pause
+                    continue
+                fi
+                printf '%s\n' "${GRAY}将安装以下软件包:${NC}"
+                sed 's/^/   /' "$src"
+                if confirm_yes "执行安装?"; then
+                    step "更新软件源索引..."
+                    pm_update
+                    step "安装中(逐个安装便于定位失败项)..."
+                    # shellcheck disable=SC2046
+                    pm_install $(tr '\n' ' ' < "$src")
+                    ok "安装流程结束"
+                fi
+                pause ;;
+            5)
+                printf '\n'
+                if ls ${BACKUP_DIR}/zerowrt-* >/dev/null 2>&1; then
+                    ls -lh ${BACKUP_DIR}/zerowrt-* 2>/dev/null |
+                        awk '{printf "   %-40s %s\n", $9, $5}'
+                else
+                    printf '%s\n' "${GRAY}   暂无备份文件${NC}"
+                fi
+                pause ;;
+            0|q) return ;;
+            *) err "无效选项" ;;
+        esac
+    done
+}
+
+# =============================================================================
+#  服务管理
+# =============================================================================
+services_menu() {
+    while :; do
+        printf '\n'
+        printf '%s\n' "${BOLD}${CYAN}服务管理 Services${NC}"
+        rule
+        printf '%s\n' "${GRAY}已启用开机自启的服务:${NC}"
+        local n s
+        n=0
+        for s in /etc/rc.d/S*; do
+            [ -e "$s" ] || continue
+            n=$((n+1))
+            printf '   %s\n' "$(basename "$s" | sed 's/^S[0-9]*//')"
+        done | sort -u | head -32
+        [ "$n" -eq 0 ] && printf '%s\n' "   ${GRAY}(无)${NC}"
+        printf '\n'
+        item 1 "Control"   "启动 / 停止 / 重启某个服务"
+        item 2 "Autostart" "开启 / 关闭开机自启"
+        item 3 "All_State" "查看全部服务及其自启状态"
+        item 0 "Back"      "返回上一级"
+        printf '%s' "  ${BOLD}选择: ${NC}"
+        read -r _sm || return
+        case "$_sm" in
+            1)
+                printf '%s' "  服务名 (如 network / dnsmasq / ttyd): "
+                read -r _sn
+                if [ ! -x "/etc/init.d/$_sn" ]; then
+                    err "服务不存在: $_sn"
+                    pause
+                    continue
+                fi
+                printf '%s\n' "   ${YELLOW}[1]${NC} start    ${YELLOW}[2]${NC} stop    ${YELLOW}[3]${NC} restart"
+                printf '%s' "  操作: "
+                read -r _op
+                case "$_op" in
+                    1) /etc/init.d/"$_sn" start && ok "$_sn 已启动" ;;
+                    2) /etc/init.d/"$_sn" stop && ok "$_sn 已停止" ;;
+                    3) /etc/init.d/"$_sn" restart && ok "$_sn 已重启" ;;
+                    *) err "无效操作" ;;
+                esac
+                pause ;;
+            2)
+                printf '%s' "  服务名: "
+                read -r _sn
+                if [ ! -x "/etc/init.d/$_sn" ]; then
+                    err "服务不存在: $_sn"
+                    pause
+                    continue
+                fi
+                printf '%s\n' "   ${YELLOW}[1]${NC} enable (自启)    ${YELLOW}[2]${NC} disable (不自启)"
+                printf '%s' "  操作: "
+                read -r _op
+                case "$_op" in
+                    1) /etc/init.d/"$_sn" enable && ok "已启用自启: $_sn" ;;
+                    2) /etc/init.d/"$_sn" disable && ok "已关闭自启: $_sn" ;;
+                    *) err "无效操作" ;;
+                esac
+                pause ;;
+            3)
+                printf '\n'
+                printf '%s\n' "  ${CYAN}── 全部服务自启状态${NC}"
+                for s in /etc/init.d/*; do
+                    [ -x "$s" ] || continue
+                    base=$(basename "$s")
+                    en="no"
+                    for r in /etc/rc.d/S*; do
+                        [ "$(basename "$r" | sed 's/^S[0-9]*//')" = "$base" ] && en="yes"
+                    done
+                    if [ "$en" = "yes" ]; then
+                        printf '   %-26s %s\n' "$base" "${GREEN}✔ 自启${NC}"
+                    else
+                        printf '   %-26s %s\n' "$base" "${GRAY}✘ 不自启${NC}"
+                    fi
+                done | head -60
+                pause ;;
+            0|q) return ;;
+            *) err "无效选项" ;;
+        esac
+    done
+}
+
+# =============================================================================
+#  插件管理
+# =============================================================================
+packages_menu() {
+    while :; do
+        printf '\n'
+        printf '%s\n' "${BOLD}${CYAN}插件管理 Packages${NC}    ${GRAY}包管理器: ${PKG:-无}${NC}"
+        rule
+        item 1 "Update_Index" "更新软件源索引 (apk update)"
+        item 2 "Install"      "安装插件 (支持空格分隔多个)"
+        item 3 "Remove"       "卸载插件"
+        item 4 "Upgrade_All"  "升级全部软件包"
+        item 5 "Search"       "搜索可用插件"
+        item 6 "Installed"    "已安装列表 (共 $(pm_installed_count) 个)"
+        item 7 "World"        "显式安装清单 world (手动装的)"
+        item 0 "Back"         "返回上一级"
+        printf '%s' "  ${BOLD}选择: ${NC}"
+        read -r _pm || return
+        case "$_pm" in
+            1) pm_update; pause ;;
+            2)
+                printf '%s' "  输入插件名: "
+                read -r _pk
+                if [ -n "$_pk" ]; then
+                    step "安装 $_pk ..."
+                    # shellcheck disable=SC2086
+                    pm_install $_pk
+                fi
+                pause ;;
+            3)
+                printf '%s' "  输入插件名: "
+                read -r _pk
+                if [ -n "$_pk" ] && confirm_yn "卸载 $_pk ?"; then
+                    # shellcheck disable=SC2086
+                    pm_remove $_pk
+                fi
+                pause ;;
+            4)
+                if confirm_yn "升级所有软件包?"; then
+                    pm_upgrade_all
+                fi
+                pause ;;
+            5)
+                printf '%s' "  输入关键字: "
+                read -r _kw
+                if [ -n "$_kw" ]; then
+                    printf '%s\n' "${GRAY}搜索结果(前 30 条):${NC}"
+                    pm_search "$_kw" | head -30
+                fi
+                pause ;;
+            6)
+                printf '\n'
+                case "$PKG" in
+                    apk) apk list --installed 2>/dev/null | awk '{print $1}' | sort | sed 's/^/   /' ;;
+                    opkg) opkg list-installed 2>/dev/null | awk '{print "   " $1}' ;;
+                    *) err "无包管理器" ;;
+                esac
+                pause ;;
+            7)
+                printf '\n'
+                world_list | sed 's/^/   /'
+                pause ;;
+            0|q) return ;;
+            *) err "无效选项" ;;
+        esac
+    done
+}
+
+# =============================================================================
+#  网络诊断
+# =============================================================================
+diag_run() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${CYAN}网络诊断 Diagnostics${NC}    ${GRAY}(每项数秒, 请稍候)${NC}"
+    rule
+    local pass=0 fail=0
+    t() {
+        if [ "$1" = 0 ]; then
+            pass=$((pass+1))
+            printf '%s\n' "   ${GREEN}✔${NC} $2"
+        else
+            fail=$((fail+1))
+            printf '%s\n' "   ${RED}✖${NC} $2"
+        fi
+    }
+
+    # 1. LAN 地址
+    lip=$(lan_ip)
+    if [ -n "$lip" ]; then t 0 "LAN 地址正常: ${BOLD}$lip${NC}"
+    else t 1 "未获取到 LAN 地址"; fi
+
+    # 2. 网关
+    gw=$(ip route 2>/dev/null | awk '/^default/{print $3; exit}')
+    if [ -n "$gw" ]; then
+        if ping -c 2 -W 1 "$gw" >/dev/null 2>&1; then
+            t 0 "网关可达: $gw"
+        else
+            t 1 "网关 $gw ping 不通"
+        fi
+    else
+        t 1 "无默认网关(旁路由模式可忽略)"
+    fi
+
+    # 3. DNS
+    if has nslookup; then
+        if nslookup www.qq.com 223.5.5.5 2>/dev/null | grep -qE 'Address|answer'; then
+            t 0 "DNS 解析正常 (223.5.5.5 → www.qq.com)"
+        else
+            t 1 "DNS 解析失败"
+        fi
+    else
+        if curl -sfL -m 5 -o /dev/null https://www.qq.com; then
+            t 0 "DNS + HTTPS 正常 (www.qq.com)"
+        else
+            t 1 "无法访问 www.qq.com"
+        fi
+    fi
+
+    # 4. 外网 IPv4
+    if curl -sfL -m 6 -o /dev/null https://www.qq.com; then
+        t 0 "外网 IPv4 连通 (https://www.qq.com)"
+    else
+        t 1 "外网 IPv4 不通"
+    fi
+
+    # 5. GitHub (OTA 可用性)
+    if curl -sfL -m 8 -o /dev/null "https://api.github.com"; then
+        t 0 "GitHub API 可达 (OTA 更新可用)"
+    else
+        t 1 "GitHub API 不可达 (OTA 将失败)"
+    fi
+
+    # 6. IPv6
+    if curl -6 -sfL -m 6 -o /dev/null https://www.qq.com 2>/dev/null; then
+        t 0 "IPv6 外网连通"
+    else
+        t 1 "IPv6 外网不通 (未开通可忽略)"
+    fi
+
+    # 7. 公网丢包
+    loss=$(ping -c 4 -W 1 223.5.5.5 2>/dev/null | awk '/packet loss/{print $6}' | tr -d '%')
+    if [ -n "$loss" ]; then
+        if [ "$loss" -le 10 ]; then
+            t 0 "公网丢包率 ${loss}% (223.5.5.5)"
+        else
+            t 1 "公网丢包严重: ${loss}%"
+        fi
+    else
+        t 1 "公网 ping 无响应"
+    fi
+
+    printf '   %s\n' "${GRAY}ℹ conntrack 连接数: $(conntrack_cnt)/$(conntrack_max)${NC}"
+    rule
+    printf '   %s\n' "${GREEN}通过 ${pass} 项${NC}   ${RED}未通过 ${fail} 项${NC}"
+    if [ "$fail" -eq 0 ]; then
+        ok "网络状况良好"
+    else
+        warn "存在异常项, 可用 [10] 日志收集 导出信息反馈问题"
+    fi
+    pause
+}
+
+# =============================================================================
+#  日志收集与查看
+# =============================================================================
+debug_menu() {
+    while :; do
+        printf '\n'
+        printf '%s\n' "${BOLD}${CYAN}日志与调试 Debug${NC}"
+        rule
+        item 1 "Collect"       "一键收集系统日志打包(反馈问题必备)"
+        item 2 "Follow_Logs"   "实时系统日志 (logread -f, Ctrl+C 退出)"
+        item 3 "Kernel_Logs"   "内核日志最后 50 行 (dmesg)"
+        item 4 "Errors"        "检索错误 / 崩溃记录"
+        item 5 "Boot_Logs"     "启动过程日志"
+        item 0 "Back"          "返回上一级"
+        printf '%s' "  ${BOLD}选择: ${NC}"
+        read -r _dm || return
+        case "$_dm" in
+            1)
+                local ts f d
+                ts=$(date +%Y%m%d-%H%M%S)
+                f="/tmp/zerowrt-debug-${ts}.tar.gz"
+                d="/tmp/zerowrt-debug"
+                rm -rf "$d"
+                mkdir -p "$d"
+                {
+                    echo "===== $(date '+%F %T %Z') ====="
+                    echo "--- release ---"; cat /etc/openwrt_release 2>/dev/null
+                    echo "--- ota_version ---"; cat /etc/ota_version 2>/dev/null
+                    echo "--- banner ---"; cat /etc/banner 2>/dev/null
+                    echo "--- uptime/loadavg ---"; cat /proc/uptime /proc/loadavg 2>/dev/null
+                    echo "--- meminfo ---"; grep -E 'MemTotal|MemAvailable|SwapTotal' /proc/meminfo
+                    echo "--- df ---"; df -h
+                    echo "--- top ---"; top -b -n 1 2>/dev/null | head -25
+                    echo "--- uci network ---"; uci show network 2>/dev/null
+                    echo "--- uci dhcp ---"; uci show dhcp 2>/dev/null
+                    echo "--- routes ---"; ip route 2>/dev/null; ip -6 route 2>/dev/null
+                    echo "--- tcp_cc ---"; sysctl net.ipv4.tcp_congestion_control 2>/dev/null
+                    echo "--- logread(tail 300) ---"; logread 2>/dev/null | tail -300
+                    echo "--- dmesg(tail 150) ---"; dmesg 2>/dev/null | tail -150
+                } > "$d/report.txt" 2>&1
+                tar -czf "$f" -C /tmp zerowrt-debug 2>/dev/null
+                rm -rf "$d"
+                if [ -f "$f" ]; then
+                    ok "日志包已生成: $f"
+                    printf '%s\n' "${GRAY}反馈问题请携带此文件: ${GH_URL}/issues${NC}"
+                    if confirm_yn "复制一份到 /www 供浏览器下载?"; then
+                        if cp "$f" /www/ 2>/dev/null; then
+                            info "下载地址: http://$(lan_ip)/$(basename "$f")  (用完请删除!)"
+                        else
+                            err "复制失败"
+                        fi
+                    fi
+                else
+                    err "打包失败"
+                fi
+                pause ;;
+            2)
+                printf '%s\n' "${GRAY}实时日志, Ctrl+C 退出${NC}"
+                logread -f
+                pause ;;
+            3)
+                dmesg 2>/dev/null | tail -50
+                pause ;;
+            4)
+                logread 2>/dev/null | grep -iE 'error|panic|oops|crash|segfault|exception' | tail -30
+                pause ;;
+            5)
+                logread 2>/dev/null | grep -iE 'procd|boot|init:|sysinit' | head -60
+                pause ;;
+            0|q) return ;;
+            *) err "无效选项" ;;
+        esac
+    done
+}
+
+# =============================================================================
+#  实用工具
+# =============================================================================
+utilities_menu() {
+    while :; do
+        printf '\n'
+        printf '%s\n' "${BOLD}${CYAN}实用工具 Utilities${NC}"
+        rule
+        item 1 "TTYD"       "网页终端开关 (浏览器访问 :7681)"
+        item 2 "SSH"        "dropbear 端口修改 / 重启"
+        item 3 "CPU_Governor" "CPU 调频策略切换"
+        item 4 "BBR"        "查看 BBR 拥塞控制状态"
+        item 5 "Docker"     "Docker 镜像加速源管理"
+        item 6 "Hostname_TZ" "主机名 / 时区"
+        item 7 "Cleanup"    "系统清理 (日志 / 临时 / 缓存)"
+        item 8 "Secrets"    "查看关键密码 (PPPoE 等, 谨慎)"
+        item 9 "Self_Update" "更新 ZeroWrt-Tools 本体"
+        item 0 "Back"       "返回上一级"
+        printf '%s' "  ${BOLD}选择: ${NC}"
+        read -r _um || return
+        case "$_um" in
+            1) util_ttyd ;;
+            2) util_ssh ;;
+            3) util_cpufreq ;;
+            4) util_bbr ;;
+            5) util_docker ;;
+            6) util_time ;;
+            7) util_clean ;;
+            8) util_secrets ;;
+            9) util_self_update ;;
+            0|q) return ;;
+            *) err "无效选项" ;;
+        esac
+    done
+}
+
+util_ttyd() {
+    printf '\n'
+    if [ -x /etc/init.d/ttyd ]; then
+        if [ -e /etc/rc.d/S*ttyd ]; then
+            printf '   %s\n' "TTYD 状态: ${GREEN}✔ 已设自启${NC}"
+        else
+            printf '   %s\n' "TTYD 状态: ${GRAY}✘ 未自启${NC}"
+        fi
+        item 1 "Enable_Run"   "开启并设自启"
+        item 2 "Disable_Stop" "停止并关闭自启"
+        item 3 "Restart"      "重启"
+        item 0 "Back"         "返回"
+        printf '%s' "  操作: "
+        read -r _op || return
+        case "$_op" in
+            1) /etc/init.d/ttyd enable && /etc/init.d/ttyd start && ok "已开启: http://$(lan_ip):7681" ;;
+            2) /etc/init.d/ttyd disable && /etc/init.d/ttyd stop && ok "已关闭" ;;
+            3) /etc/init.d/ttyd restart && ok "已重启" ;;
+        esac
+    else
+        err "未安装 ttyd, 可在 [8] 插件管理 中安装: ${PKG:-apk} add luci-app-ttyd ttyd"
+    fi
+    pause
+}
+
+util_ssh() {
+    printf '\n'
+    if [ ! -x /etc/init.d/dropbear ]; then
+        err "未检测到 dropbear"
+        pause
+        return
+    fi
+    local port
+    port=$(uci -q get dropbear.@dropbear[0].Port 2>/dev/null)
+    [ -z "$port" ] && port="22"
+    printf '   %s\n' "dropbear SSH 端口: ${BOLD}$port${NC}"
+    item 1 "Change_Port" "修改端口"
+    item 2 "Restart"     "重启服务"
+    item 3 "Autostart"   "查看自启状态"
+    item 0 "Back"        "返回"
+    printf '%s' "  操作: "
+    read -r _op || return
+    case "$_op" in
+        1)
+            printf '%s' "  新端口: "
+            read -r _np
+            case "$_np" in
+                ''|*[!0-9]*)
+                    err "无效端口" ;;
+                *)
+                    if [ "$_np" -lt 1 ] || [ "$_np" -gt 65535 ] 2>/dev/null; then
+                        err "端口超出范围"
+                    else
+                        uci set dropbear.@dropbear[0].Port="$_np"
+                        uci commit dropbear
+                        /etc/init.d/dropbear restart
+                        ok "SSH 端口已改为 $_np (旧会话可能断开)"
+                    fi ;;
+            esac ;;
+        2) /etc/init.d/dropbear restart && ok "已重启" ;;
+        3)
+            if ls /etc/rc.d/*dropbear >/dev/null 2>&1; then
+                ok "dropbear 已设开机自启"
+            else
+                warn "dropbear 未设开机自启"
+            fi ;;
+    esac
+    pause
+}
+
+util_cpufreq() {
+    printf '\n'
+    local govdir cur avail ng c
+    govdir=/sys/devices/system/cpu/cpu0/cpufreq
+    if [ ! -d "$govdir" ]; then
+        err "此设备不支持 cpufreq 调频"
+        pause
+        return
+    fi
+    cur=$(cat "$govdir/scaling_governor" 2>/dev/null)
+    avail=$(cat "$govdir/scaling_available_governors" 2>/dev/null)
+    printf '   %s\n' "当前策略: ${BOLD}$cur${NC}"
+    printf '   %s\n' "可用策略: ${GRAY}$avail${NC}"
+    printf '%s' "  输入要切换的策略 (回车跳过): "
+    read -r ng || return
+    if [ -n "$ng" ]; then
+        ok2=0
+        for c in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+            [ -f "$c" ] && echo "$ng" > "$c" 2>/dev/null && ok2=1
+        done
+        if [ "$ok2" = 1 ]; then ok "已切换为 $ng (重启后失效, 持久化请在 LuCI 设置)"
+        else err "切换失败(内核可能未启用该策略)"; fi
+    fi
+    pause
+}
+
+util_bbr() {
+    printf '\n'
+    local cc
+    cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
+    printf '   %-12s %s\n' "拥塞控制" "${BOLD}${cc:-未知}${NC}"
+    printf '   %-12s %s\n' "队列算法" "$(sysctl -n net.core.default_qdisc 2>/dev/null)"
+    case "$cc" in
+        *bbr*) ok "BBR 已启用 (ZeroWrt 集成 BBRv3 补丁)" ;;
+        *) warn "当前非 BBR, 可用: sysctl -w net.ipv4.tcp_congestion_control=bbr" ;;
+    esac
+    pause
+}
+
+util_docker() {
+    printf '\n'
+    if [ ! -f /etc/config/dockerd ]; then
+        err "未安装 docker / dockerd, 可在 [8] 插件管理 中安装 luci-app-dockerman"
+        pause
+        return
+    fi
+    printf '%s\n' "${GRAY}当前镜像加速:${NC}"
+    local m
+    m=$(uci -q get dockerd.globals.registry_mirrors 2>/dev/null)
+    if [ -n "$m" ]; then
+        echo "$m" | sed 's/^/   /'
+    else
+        printf '%s\n' "   (未配置)"
+    fi
+    item 1 "Add_DaoCloud" "添加 DaoCloud 加速 (docker.m.daocloud.io)"
+    item 2 "Clear"        "清除全部加速配置"
+    item 0 "Back"         "返回"
+    printf '%s' "  操作: "
+    read -r _op || return
+    case "$_op" in
+        1)
+            if echo "$m" | grep -q daocloud; then
+                info "已存在, 无需重复添加"
+            else
+                uci add_list dockerd.globals.registry_mirrors="https://docker.m.daocloud.io"
+                uci commit dockerd
+                /etc/init.d/dockerd restart 2>/dev/null
+                ok "已添加 DaoCloud 加速"
+            fi ;;
+        2)
+            uci -q delete dockerd.globals.registry_mirrors
+            uci commit dockerd
+            /etc/init.d/dockerd restart 2>/dev/null
+            ok "已清除加速配置" ;;
+    esac
+    pause
+}
+
+util_time() {
+    printf '\n'
+    printf '   %-10s %s\n' "主机名" "$(uci -q get system.@system[0].hostname 2>/dev/null)"
+    printf '   %-10s %s\n' "时区" "$(uci -q get system.@system[0].zonename 2>/dev/null) $(uci -q get system.@system[0].timezone 2>/dev/null)"
+    printf '   %-10s %s\n' "当前时间" "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    item 1 "Hostname"  "修改主机名"
+    item 2 "Shanghai"  "恢复 Asia/Shanghai 时区"
+    item 0 "Back"      "返回"
+    printf '%s' "  操作: "
+    read -r _op || return
+    case "$_op" in
+        1)
+            printf '%s' "  新主机名: "
+            read -r _hn
+            if [ -n "$_hn" ]; then
+                uci set system.@system[0].hostname="$_hn"
+                uci commit system
+                echo "$_hn" > /proc/sys/kernel/hostname 2>/dev/null
+                ok "已设置主机名为 $_hn"
+            fi ;;
+        2)
+            uci set system.@system[0].timezone='CST-8'
+            uci set system.@system[0].zonename='Asia/Shanghai'
+            uci commit system
+            ok "已恢复 Asia/Shanghai (执行 /etc/init.d/system restart 生效)"
+            ;;
+    esac
+    pause
+}
+
+util_clean() {
+    printf '\n'
+    local b1 b2
+    b1=$(df -k / | awk 'NR==2{print $3}')
+    info "重启 logd 释放系统日志环形缓冲..."
+    if [ -x /etc/init.d/log ]; then
+        /etc/init.d/log restart >/dev/null 2>&1 && ok "日志缓冲已清空" || warn "log 服务重启失败"
+    fi
+    info "清理 /tmp 临时文件 (zerowrt 相关)..."
+    rm -rf /tmp/zerowrt-* /tmp/ota-check /tmp/cattools 2>/dev/null
+    rm -f /tmp/*.apk /tmp/*.ipk 2>/dev/null
+    if [ "$PKG" = "apk" ]; then
+        info "清理 apk 缓存..."
+        apk cache clean 2>/dev/null || true
+    fi
+    sync
+    b2=$(df -k / | awk 'NR==2{print $3}')
+    ok "清理完成, 释放约 $(( (b1 - b2) / 1024 )) MB"
+    pause
+}
+
+util_secrets() {
+    printf '\n'
+    printf '%s\n' "${RED}⚠ 以下为明文敏感信息, 仅限本机管理员查看!${NC}"
+    item 1 "PPPoE"       "宽带拨号账号密码"
+    item 2 "qBittorrent" "WebUI 账号密码"
+    item 3 "WebDAV_Samba" "文件服务账号"
+    item 4 "Custom"      "自定义 uci 配置段"
+    item 0 "Back"        "返回"
+    printf '%s' "  选择: "
+    read -r _op || return
+    case "$_op" in
+        1)
+            printf '   账号: %s\n' "$(uci -q get network.wan.username 2>/dev/null)"
+            printf '   密码: %s\n' "${RED}$(uci -q get network.wan.password 2>/dev/null)${NC}" ;;
+        2)
+            uci show qbittorrent 2>/dev/null | grep -iE 'username|password' | sed 's/^/   /' || echo "   (未配置)" ;;
+        3)
+            echo "   webdav:"; uci show webdav 2>/dev/null | grep -iE 'user|pass|auth' | sed 's/^/   /' || true
+            echo "   samba:"; grep -rhE 'passwd|password' /etc/samba/ 2>/dev/null | sed 's/^/   /' || echo "   (无)" ;;
+        4)
+            printf '%s' "  输入 uci 配置段 (如 mosdns / frpc / nikki): "
+            read -r _seg
+            if [ -n "$_seg" ]; then
+                uci show "$_seg" 2>/dev/null | grep -iE 'pass|key|token|secret' | sed 's/^/   /' || echo "   未找到相关字段"
+            fi ;;
+    esac
+    pause
+}
+
+util_self_update() {
+    printf '\n'
+    info "从 GitHub 获取 ZeroWrt-Tools 最新版..."
+    local tmp rv lv
+    tmp="/tmp/zerowrt-selfupdate.sh"
+    if curl -sfL -m 30 -o "$tmp" "$RAW_URL" && [ -s "$tmp" ] && grep -q "ZeroWrt-Tools" "$tmp"; then
+        rv=$(grep -m1 '^TOOL_VER=' "$tmp" | cut -d'"' -f2)
+        lv=$TOOL_VER
+        printf '   %s\n' "本地版本: $lv"
+        printf '   %s\n' "远端版本: $rv"
+        if [ "$rv" != "$lv" ]; then
+            if confirm_yn "发现新版本 $rv, 立即更新?"; then
+                chmod +x "$tmp"
+                mv "$tmp" /usr/bin/ZeroWrt
+                ok "已更新到 $rv, 请重新运行 ZeroWrt"
+            else
+                rm -f "$tmp"
+            fi
+        else
+            if confirm_yn "已是最新($lv), 仍要重新安装覆盖?"; then
+                chmod +x "$tmp"
+                mv "$tmp" /usr/bin/ZeroWrt
+                ok "已重装"
+            else
+                rm -f "$tmp"
+            fi
+        fi
+    else
+        err "获取失败, 请检查网络"
+    fi
+    pause
+}
+
+# =============================================================================
+#  高级操作 (危险区)
+# =============================================================================
+danger_menu() {
+    printf '\n'
+    printf '%s\n' "${BOLD}${RED}高级操作 Danger Zone${NC}"
+    rule
+    item 1 "Set_Password"   "修改 root 密码 (passwd 交互)"
+    item 2 "Reset_Password" "重置密码为 password (应急, 用后必改)"
+    item 3 "Factory_Reset"  "恢复出厂设置 (firstboot, 清空全部!)"
+    item 4 "Reboot"         "重启系统"
+    item 5 "Poweroff"       "关机"
+    item 6 "Disk_Info"      "磁盘与分区信息 (只读)"
+    item 7 "Drop_Caches"    "释放内存缓存"
+    item 0 "Back"           "返回上一级"
+    printf '%s' "  ${BOLD}选择: ${NC}"
+    read -r _dm || return
+    case "$_dm" in
+        1)
+            printf '%s\n' "${GRAY}输入两次新密码(不回显):${NC}"
+            passwd root
+            ok "密码已更新" ;;
+        2)
+            if confirm_yes "重置 root 密码为 password (弱口令, 有风险)?"; then
+                sed -i 's|^root:[^:]*:|root:$1$V4UetPzk$CYXluq4wUazHjmCDBCqXF.:|' /etc/shadow
+                ok "已重置为 password, 请立即用 passwd 修改!"
+            fi
+            pause ;;
+        3)
+            printf '%s\n' "${RED}⚠ 恢复出厂将删除全部配置、插件与数据!${NC}"
+            if confirm_yes "确认恢复出厂?"; then
+                printf '%s\n' "${RED}最后确认: 输入大写 YES 执行${NC}"
+                printf '%s' "  > "
+                read -r _fy
+                if [ "$_fy" = "YES" ]; then
+                    firstboot -y
+                    if confirm_yn "立即重启设备?"; then
+                        sync
+                        reboot
+                    else
+                        printf '%s\n' "${GRAY}已重置, 请稍后手动重启${NC}"
+                        pause
+                    fi
+                else
+                    err "已取消"
+                    pause
+                fi
+            else
+                pause
+            fi ;;
+        4)
+            if confirm_yes "重启设备?"; then
+                sync
+                reboot
+            fi
+            pause ;;
+        5)
+            if confirm_yes "关机? (需手动开机)"; then
+                sync
+                poweroff
+            fi
+            pause ;;
+        6)
+            printf '\n'
+            printf '%s\n' "  ${CYAN}── 块设备 (lsblk)${NC}"
+            if has lsblk; then
+                lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS 2>/dev/null || lsblk
+            else
+                printf '%s\n' "${GRAY}   lsblk 不可用, 尝试读取 /proc/partitions:${NC}"
+                cat /proc/partitions 2>/dev/null
+            fi
+            printf '%s\n' "  ${CYAN}── 挂载情况 (df)${NC}"
+            df -h 2>/dev/null | head -12
+            printf '%s\n' "  ${CYAN}── 引导方式${NC}"
+            if [ -d /sys/firmware/efi ]; then
+                printf '%s\n' "   EFI 引导"
+            else
+                printf '%s\n' "   Legacy/BIOS 引导"
+            fi
+            printf '%s\n' "${GRAY}提示: 全新安装/换盘需用安装镜像启动, 详见项目 README${NC}"
+            pause ;;
+        7)
+            if confirm_yn "释放 pagecache (sync 后 drop_caches)?"; then
+                sync
+                if echo 3 > /proc/sys/vm/drop_caches 2>/dev/null; then
+                    ok "已释放内存缓存"
+                else
+                    err "操作失败"
+                fi
+            fi
+            pause ;;
+        0|q) return ;;
+        *) err "无效选项" ;;
+    esac
+}
+
+# =============================================================================
+#  主分发循环
+# =============================================================================
+main() {
+    while true; do
+        print_header
+        main_menu
+        read -r _c || { printf '\n'; break; }
+        case "$_c" in
+            1) net_wizard ;;
+            2) set_ip_menu ;;
+            3) mirror_menu ;;
+            4) ota_menu ;;
+            5) status_panel ;;
+            6) backup_menu ;;
+            7) services_menu ;;
+            8) packages_menu ;;
+            9) diag_run ;;
+            10) debug_menu ;;
+            11) utilities_menu ;;
+            12) danger_menu ;;
+            0|q|Q)
+                printf '%s\n' "${GREEN}再见, 感谢使用 ZeroWrt-Tools!${NC}"
+                break ;;
+            *) err "无效选项, 请重新输入" ;;
+        esac
+    done
+}
+
+# =============================================================================
+#  命令行入口
+# =============================================================================
+usage() {
+    cat <<EOF
+ZeroWrt-Tools v${TOOL_VER} · ZeroWrt x86 固件管理工具箱
+项目: ${GH_URL}
+
+用法:
+  ZeroWrt                进入交互式菜单
+  ZeroWrt -h, --help     显示本帮助
+  ZeroWrt -v, --version  显示版本与固件信息
+  ZeroWrt -s, --status   直接输出系统状态面板(适合脚本/开机自启)
+  ZeroWrt -c, --check    直接检查固件更新(不下载)
+
+环境变量:
+  NO_COLOR=1             禁用彩色输出
+EOF
+    exit 0
+}
+
+if [ "$(id -u)" != 0 ] && [ -z "${ZEROWRT_DEV:-}" ]; then
+    printf '%s\n' "${RED}✖ 错误: ZeroWrt-Tools 需要 root 权限, 请使用 root 用户运行${NC}"
+    exit 1
+fi
+
+case "$1" in
+    -h|--help|-help) usage ;;
+    -v|--version)
+        printf 'ZeroWrt-Tools %s\n' "$TOOL_VER"
+        printf '固件版本 : %s\n' "$(fw_version)"
+        printf '内核     : %s %s\n' "$(uname -r)" "$(uname -m)"
+        exit 0 ;;
+    -s|--status) status_panel ;;
+    -c|--check) ota_check ;;
+    "") main ;;
+    *)
+        printf '%s\n' "${RED}✖ 未知参数: $1${NC}"
+        usage ;;
+esac
