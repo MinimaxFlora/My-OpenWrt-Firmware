@@ -336,6 +336,7 @@ jobs:
           cp -f ../diy-part3.sh ./diy-part3.sh
           chmod +x ./diy-part3.sh
           ./diy-part3.sh
+          
       - name: 📦 整理固件与生成 Release 说明
         id: release_info
         run: |
