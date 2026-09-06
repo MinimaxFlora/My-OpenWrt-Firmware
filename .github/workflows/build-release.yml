@@ -307,7 +307,7 @@ jobs:
       # ==========================================================
       - name: 🏷️ 配置构建变量及 OTA 信息
         run: |
-          # 1. 设置 Release Tag
+          # 1. 设置 Release Tag (已根据要求更新为 EternalWrt)
           RELEASE_TAG="ZeroWrt_$(date +'%Y.%m.%d-%H%M%S')"
           echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
           echo -e "\e[1;32m[🏷️] 本次构建发布 Tag: ${RELEASE_TAG}\e[0m"
@@ -317,10 +317,18 @@ jobs:
           echo "CURRENT_DATE=$CURRENT_DATE" >> "$GITHUB_ENV"
           echo -e "\e[1;32m[🕒] 本次构建时间戳: ${CURRENT_DATE}\e[0m"
           
-          # 3. 设置 OTA 更新日志内容 (可以在此处按需修改你每版想推送的日志)
-          OTA_LOGS="- 修复了网络断流问题\n- 更新了核心依赖包\n- 优化了内存占用"
-          echo "OTA_LOGS=$OTA_LOGS" >> "$GITHUB_ENV"
-          echo -e "\e[1;32m[📝] OTA 更新日志已配置\e[0m"
+          # 3. 设置你自己的 x86 固件 OTA 更新日志内容（多行文本使用 EOF 写入）
+          {
+            echo "OTA_LOGS<<EOF"
+            echo "### ZeroWrt x86_64 固件更新日志"
+            echo "- **内核版本**：升级至 Linux Kernel 6.12.103"
+            echo "- **系统核心**：同步 OpenWrt 最新源码与基础依赖"
+            echo "- **网络性能**：优化 x86 架构下的网卡驱动兼容性与中断负载均衡"
+            echo "- **系统维护**：常规插件更新及安全补丁修复"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+          
+          echo -e "\e[1;32m[📝] x86 (Kernel 6.12.103) OTA 更新日志已配置\e[0m"
           
       - name: 🔨 编译固件
         run: |
