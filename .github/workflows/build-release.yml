@@ -301,6 +301,27 @@ jobs:
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
+      # ==========================================================
+      # 在编译前：生成 Release Tag、时间戳及 OTA 更新日志
+      # 供 diy-part3.sh 与 release_info 步骤复用
+      # ==========================================================
+      - name: 🏷️ 配置构建变量及 OTA 信息
+        run: |
+          # 1. 设置 Release Tag
+          RELEASE_TAG="ZeroWrt_$(date +'%Y.%m.%d-%H%M%S')"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo -e "\e[1;32m[🏷️] 本次构建发布 Tag: ${RELEASE_TAG}\e[0m"
+          
+          # 2. 设置 Unix 时间戳 (给 ota.json 的 build_date 使用)
+          CURRENT_DATE=$(date +%s)
+          echo "CURRENT_DATE=$CURRENT_DATE" >> "$GITHUB_ENV"
+          echo -e "\e[1;32m[🕒] 本次构建时间戳: ${CURRENT_DATE}\e[0m"
+          
+          # 3. 设置 OTA 更新日志内容 (可以在此处按需修改你每版想推送的日志)
+          OTA_LOGS="- 修复了网络断流问题\n- 更新了核心依赖包\n- 优化了内存占用"
+          echo "OTA_LOGS=$OTA_LOGS" >> "$GITHUB_ENV"
+          echo -e "\e[1;32m[📝] OTA 更新日志已配置\e[0m"
+          
       - name: 🔨 编译固件
         run: |
           cd openwrt
@@ -308,16 +329,6 @@ jobs:
           echo "$(nproc) thread compile"
 
           make -j$(nproc) || make -j1 V=s
-
-      # ==========================================================
-      # 生成 Release Tag（秒级时间戳）
-      # 供 diy-part3.sh（ota.json 下载地址）与 release_info 步骤复用，避免重复计算
-      # ==========================================================
-      - name: 🏷️ 生成发布 Tag
-        run: |
-          RELEASE_TAG="ZeroWrt_$(date +'%Y.%m.%d-%H%M%S')"
-          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
-          echo -e "\e[1;32m[🏷️] 本次构建发布 Tag: ${RELEASE_TAG}\e[0m"
 
       - name: 📝 生成内核和 OTA 索引
         run: |
