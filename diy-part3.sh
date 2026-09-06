@@ -63,6 +63,7 @@ fi
 echo -e "\n${BLUE}[*] 正在生成 OTA (ota.json) 升级索引...${NC}"
 
 CURRENT_DATE=$(date +%s)
+GH_PROXY="https://gh-proxy.kejizero.xyz"
 OTA_URL="https://github.com/MinimaxFlora/My-OpenWrt-Firmware/releases/download"
 
 # GitHub Actions 中由 workflow 注入本次构建的 RELEASE_TAG（与 ota.json 的上传目标一致）；
@@ -99,7 +100,7 @@ cat > ota.json <<EOF
     {
       "build_date": "$CURRENT_DATE",
       "sha256sum": "$SHA256",
-      "url": "$OTA_URL/$VERSION/openwrt-x86-64-generic-squashfs-combined-efi.img.gz"
+      "url": "$GH_PROXY/$OTA_URL/$VERSION/openwrt-x86-64-generic-squashfs-combined-efi.img.gz"
     }
   ]
 }
