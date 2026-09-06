@@ -287,7 +287,7 @@ popd >/dev/null
 # --- SQM ---
 log_info "配置 SQM 并更新 sqm-scripts Makefile..."
 mkdir -p feeds/packages/net/sqm-scripts
-curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/SQM/sqm-scripts/Makefile" > feeds/packages/net/sqm-scripts/Makefile
+curl -s "https://raw.githubusercontent.com/MinimaxFlora/My-OpenWrt-Firmware/refs/heads/master/patches/SQM/Makefile" > feeds/packages/net/sqm-scripts/Makefile
 
 # --- FRPC ---
 log_info "配置 FRPC..."
