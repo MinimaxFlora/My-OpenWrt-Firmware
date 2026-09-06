@@ -7,6 +7,8 @@
 
 # OTA 在线更新
 OTA_URL="https://api.kejizero.xyz/openwrt-25.12/ota.json"
+uci set ota.config.api_url="$OTA_URL"
+uci commit ota
 
 # 时区与主机名
 uci -q set system.@system[0].hostname='ZeroWrt'
