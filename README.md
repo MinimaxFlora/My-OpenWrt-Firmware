@@ -18,7 +18,7 @@ Open Source · Tailored Experience · High Performance
 
 **English** | [简体中文](./README_ZH.md)
 
-[Download](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/releases/latest) · [Build](#build-from-source) · [Customize](#repository-layout) · [Issues](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/issues)
+[Download](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/releases/latest) · [Build](#build-from-source) · [Customize](#repository-layout) · [Changelog](./CHANGELOG.md) · [Issues](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/issues)
 
 </div>
 
@@ -41,7 +41,7 @@ Open Source · Tailored Experience · High Performance
 | **Web UI** | LuCI on **Nginx** (HTTP/3 / QUIC) · **Argon** theme · Simplified Chinese |
 | **Stack** | **BBRv3** · TCP Brutal · **LRNG** · eBPF / XDP / BTF · MPTCP · nft fullcone |
 | **Apps** | Docker · Nikki / Mihomo · HomeProxy · MosDNS · Samba4 · qBittorrent · SQM |
-| **CI** | GitHub Actions → tagged **ZeroWrt** releases with SHA256 |
+| **CI** | GitHub Actions → tagged **ZeroWrt** releases + release-based **toolchain cache** |
 
 ---
 
@@ -154,6 +154,13 @@ sudo dd if=openwrt-x86-64-generic-squashfs-combined-efi.img of=/dev/sdX bs=4M st
 
 GitHub Actions compiles on `ubuntu-24.04` (public workflow) or a self-hosted runner (private workflow). Manual trigger: **Actions → Build Releases → Run workflow**.
 
+### CI toolchain cache
+
+Every CI build first restores the prebuilt toolchain from the rolling [Toolchain_Cache release](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/releases/tag/Toolchain_Cache) (`build_dir/ dl/ staging_dir/ tmp/`), so upstream source updates never force a full toolchain rebuild. Regenerate the cache only when the toolchain configuration changes (GCC / libc):
+
+1. **Actions → Build Toolchain Cache → Run workflow** — compiles the toolchain and uploads `toolchain_musl_x86_64_gcc-15.tar.zst` (~1.5 GB) to the `Toolchain_Cache` release.
+2. The next **Build Releases** run downloads and extracts it automatically; if the release is missing, the build falls back to a full compile.
+
 Local outline (same stages as CI):
 
 ```bash
@@ -216,8 +223,9 @@ My-OpenWrt-Firmware/
 ├── doc/zerowrt.webp                 # README banner
 ├── scripts/                         # kmod signing helpers
 ├── LICENSE                          # GPL-2.0
+├── CHANGELOG.md                     # Project changelog
 └── .github/
-    ├── workflows/                   # build-release.yml · private runner
+    ├── workflows/                   # build-release.yml · toolchain-cache.yml · cleanup
     ├── ISSUE_TEMPLATE/              # bug / feature forms
     ├── PULL_REQUEST_TEMPLATE.md
     ├── dependabot.yml
