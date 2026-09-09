@@ -108,7 +108,7 @@ jobs:
           sudo sysctl -w vm.drop_caches=3
 
       # ==========================================================
-      # 配置构建系统环境 (编译工具链所需的最小依赖集)
+      # 配置构建系统环境
       # ==========================================================
       - name: 🛠️ 配置构建系统环境
         run: |
@@ -122,20 +122,77 @@ jobs:
           sudo apt-get update
 
           sudo apt-get install -y \
-            autoconf automake binutils bison build-essential \
-            bzip2 ccache cmake coreutils curl file flex g++ \
+            antlr3 asciidoc autoconf automake binutils \
+            bison build-essential bzip2 ccache cmake \
+            coreutils curl file flex g++ \
             g++-multilib gawk gcc-multilib gettext git \
-            gperf jq libncurses5-dev libssl-dev libtool \
-            patch python3 python3-ply rsync texinfo \
-            unzip upx-ucl wget zlib1g-dev zstd
+            gnutls-dev gperf haveged jq lib32gcc-s1 \
+            libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libncurses5-dev \
+            libplist-utils libpython3-dev libreadline-dev libssl-dev libtool \
+            msmtp patch python3 python3-pip python3-ply \
+            python3-pyelftools qemu-utils rename rsync scons \
+            subversion swig texinfo uglifyjs unzip \
+            upx-ucl wget xmlto zlib1g-dev zstd
 
           echo "::endgroup::"
 
+          echo "::group::🐳 安装 Docker 环境"
+
+          sudo mkdir -p /etc/apt/sources.list.d
+
+          curl -fsSL \
+            https://download.docker.com/linux/ubuntu/gpg |
+            sudo gpg --dearmor \
+            -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" |
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            containerd.io \
+            docker-buildx-plugin \
+            docker-ce \
+            docker-ce-cli \
+            docker-ce-rootless-extras \
+            docker-compose-plugin
+
+          if [ -f /usr/libexec/docker/docker-init ]; then
+            sudo ln -sf \
+              /usr/libexec/docker/docker-init \
+              /usr/local/bin/docker-init
+          fi
+
+          echo "::endgroup::"
+
+          echo "::group::⚙️ 安装 LLVM/Clang 工具链"
+
+          export PATH="/opt/clang/bin:$PATH"
+          echo "/opt/clang/bin" >> "$GITHUB_PATH"
+
+          sudo mkdir -p /opt/clang
+
+          wget -q \
+            https://github.com/sbwml/openwrt-llvm-toolchain/releases/download/22.0.2/clang-22.0.2-x86_64-unknown-linux-gnu.tar.xz
+
+          sudo tar \
+            --strip-components=1 \
+            -C /opt/clang \
+            -xf clang-*-x86_64-unknown-linux-gnu.tar.xz
+
+          rm -rf clang-*-x86_64-unknown-linux-gnu.tar.xz
+
+          clang --version
+
           sudo apt-get clean
 
+          echo "::endgroup::"
+
       # ==========================================================
-      # 克隆 OpenWrt 源码 (与 build-release.yml 相同分支/镜像替换)
+      # 克隆 OpenWrt 源码
       # ==========================================================
+
       - name: ⬇️ 克隆 OpenWrt 源码
         run: |
           git clone \
@@ -151,19 +208,62 @@ jobs:
             's|https://git.openwrt.org/project/|https://github.com/openwrt/|g' \
             openwrt/feeds.conf.default
 
+          cd openwrt
+
+          cp -f ../diy-part1.sh ./
+          chmod +x ./diy-part1.sh
+          ./diy-part1.sh
+
       # ==========================================================
-      # 加载自定义配置 (工具链版本/架构/libc 均由此决定)
+      # 更新并安装 Feeds
       # ==========================================================
+
+      - name: 🔄 更新并安装 Feeds
+        working-directory: ./openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          cp -f ../diy-part2.sh ./diy-part2.sh
+          chmod +x ./diy-part2.sh
+          ./diy-part2.sh
+
+      # ==========================================================
+      # 加载补丁文件
+      # ==========================================================
+
+      - name: 📂 加载补丁文件
+        working-directory: ./openwrt
+        run: |
+          cp -rf "$GITHUB_WORKSPACE/scripts/"* ./
+
+          cp -rf \
+            "$GITHUB_WORKSPACE/patches/IGC/996-intel-igc-i225-i226-disable-eee.patch" \
+            ./target/linux/x86/patches-6.12/
+
+          cp -rf \
+            "$GITHUB_WORKSPACE/patches/BBRv3/"* \
+            ./target/linux/generic/backport-6.12/
+
+          cp -rf \
+            "$GITHUB_WORKSPACE/patches/LRNG/"* \
+            ./target/linux/generic/hack-6.12/
+
+      # ==========================================================
+      # 加载自定义配置
+      # ==========================================================
+
       - name: ⚙️ 加载自定义配置
         working-directory: ./openwrt
         run: |
           cp "$GITHUB_WORKSPACE/.config" .config
           cp -rf "$GITHUB_WORKSPACE/files" ./
-          find ./files -type d -exec chmod +x {} \; 2>/dev/null || true
+          find ./files -type d -exec chmod +x {} \;
           make defconfig
 
       # ==========================================================
-      # 编译工具链并打包 (build_dir/dl/staging_dir/tmp)
+      # 编译工具链并打包 (host tools + 交叉编译器 + C 库)
+      # 打包内容: build_dir / dl / staging_dir / tmp
       # ==========================================================
       - name: 🔨 编译工具链并打包
         working-directory: ./openwrt
