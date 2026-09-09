@@ -51,7 +51,7 @@ on:
       releases_keep_keyword:
         description: "Keyword of the keep releases."
         required: false
-        default: "kmod-openwrt-25.12"
+        default: "kmod-openwrt-25.12/Toolchain_Cache"
       delete_workflows:
         description: "Delete workflows records?"
         required: true

@@ -188,7 +188,7 @@ jobs:
             msmtp patch python3 python3-pip python3-ply \
             python3-pyelftools qemu-utils rename rsync scons \
             subversion swig texinfo uglifyjs unzip \
-            upx-ucl wget xmlto zlib1g-dev
+            upx-ucl wget xmlto zlib1g-dev zstd
 
           echo "::endgroup::"
 
@@ -314,13 +314,52 @@ jobs:
           make defconfig
 
       # ==========================================================
-      # 编译缓存
+      # 工具链缓存：从 Toolchain_Cache Release 下载并解压
+      # (缓存包由 toolchain-cache.yml 生成: build_dir/dl/staging_dir/tmp，
+      #  上传至滚动 Tag "Toolchain_Cache"，不随上游源码更新而失效)
       # ==========================================================
-      - name: 🗃️ 编译缓存
-        uses: HiGarfield/cachewrtbuild@main
-        with:
-          mixkey: x86
-          prefix: ${{ github.workspace }}/openwrt
+      - name: 🗃️ 下载工具链缓存
+        working-directory: ./openwrt
+        run: |
+          # 缓存文件名须与 toolchain-cache.yml 中生成规则保持一致
+          LIBC=musl
+          grep -q '^CONFIG_USE_GLIBC=y' .config && LIBC=glibc
+          toolchain_arch="x86_64"
+          grep -qE '^CONFIG_TARGET_(armvirt|armsr|rockchip)' .config && toolchain_arch="aarch64_generic"
+          gcc_version=$(sed -n 's/^CONFIG_GCC_USE_VERSION_\([0-9]*\)=y/\1/p' .config | head -n1)
+          gcc_version=${gcc_version:-15}
+
+          TOOLCHAIN_FILE="toolchain_${LIBC}_${toolchain_arch}_gcc-${gcc_version}.tar.zst"
+          # GitHub Actions 运行器位于 GitHub 网络内，直连下载无需代理
+          TOOLCHAIN_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/Toolchain_Cache"
+
+          echo -e "\n\e[1;36m================================================================\e[0m"
+          echo -e "\e[1;33m   🗃️ 工具链缓存恢复 (TOOLCHAIN CACHE RESTORE)\e[0m"
+          echo -e "\e[1;36m================================================================\e[0m"
+          echo -e "  • 缓存文件: ${TOOLCHAIN_FILE}"
+
+          # 下载工具链缓存；不存在时(首次/尚未生成)回退为全量编译
+          if curl -fL --retry 3 --connect-timeout 15 \
+            "${TOOLCHAIN_URL}/${TOOLCHAIN_FILE}" -o toolchain.tar.zst 2>/dev/null; then
+            echo -e "\e[1;32m[📥] Download Toolchain ... 缓存下载成功，正在解压\e[0m"
+            tar -I zstd -xf toolchain.tar.zst || {
+              echo -e "\e[1;31m[❌] 工具链缓存解压失败(文件可能损坏)，请重新运行 toolchain-cache 工作流生成缓存\e[0m"
+              rm -f toolchain.tar.zst
+              exit 1
+            }
+            rm -f toolchain.tar.zst
+            mkdir -p bin
+            # 刷新 mtime，避免 make 因时间戳新旧判断而重新编译工具链
+            echo -e "\e[1;32m[⚙️] Process Toolchain ... 刷新 staging_dir/tmp 时间戳\e[0m"
+            find ./staging_dir -type f -exec touch {} + 2>/dev/null || true
+            find ./tmp -type f -exec touch {} + 2>/dev/null || true
+            echo -e "\e[1;32m[✅] 工具链缓存就绪，将跳过工具链编译\e[0m"
+          else
+            rm -f toolchain.tar.zst
+            echo -e "\e[1;33m[⚠️] 未找到工具链缓存 ${TOOLCHAIN_FILE}\e[0m"
+            echo -e "\e[1;33m[⚠️] 本次将全量编译(含工具链，耗时较长)；建议先在 Actions 手动运行 toolchain-cache 工作流生成缓存\e[0m"
+          fi
+          echo -e "\e[1;36m================================================================\e[0m\n"
 
       # ==========================================================
       # 下载软件包
