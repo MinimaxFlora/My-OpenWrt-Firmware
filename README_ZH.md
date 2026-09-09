@@ -18,7 +18,7 @@
 
 [English](./README.md) | **简体中文**
 
-[下载固件](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/releases/latest) · [自行编译](#自行编译) · [目录说明](#仓库结构) · [反馈问题](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/issues)
+[下载固件](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/releases/latest) · [自行编译](#自行编译) · [目录说明](#仓库结构) · [更新日志](./CHANGELOG.md) · [反馈问题](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/issues)
 
 </div>
 
@@ -41,7 +41,7 @@
 | **界面** | LuCI 跑在 **Nginx**（HTTP/3 / QUIC）· **Argon** 主题 · 简体中文 |
 | **协议栈** | **BBRv3** · TCP Brutal · **LRNG** · eBPF / XDP / BTF · MPTCP · nft fullcone |
 | **应用** | Docker · Nikki / Mihomo · HomeProxy · MosDNS · Samba4 · qBittorrent · SQM |
-| **CI** | GitHub Actions 自动编译，发布带 SHA256 的 **ZeroWrt** Release |
+| **CI** | GitHub Actions 自动编译 + Release 版**工具链缓存**，发布带 SHA256 的 **ZeroWrt** Release |
 
 ---
 
@@ -154,6 +154,13 @@ sudo dd if=openwrt-x86-64-generic-squashfs-combined-efi.img of=/dev/sdX bs=4M st
 
 GitHub Actions 在 `ubuntu-24.04`（公开工作流）或自托管 Runner（私有工作流）上编译。手动触发：**Actions → Build Releases → Run workflow**。
 
+### CI 工具链缓存
+
+每次 CI 编译前，会先从滚动更新的 [Toolchain_Cache Release](https://github.com/MinimaxFlora/My-OpenWrt-Firmware/releases/tag/Toolchain_Cache) 恢复预编译工具链（`build_dir/ dl/ staging_dir/ tmp/`），上游源码更新不会再触发工具链整链重编。只有工具链配置（GCC / libc）变化时才需要重新生成：
+
+1. **Actions → Build Toolchain Cache → Run workflow**：编译工具链并上传 `toolchain_musl_x86_64_gcc-15.tar.zst`（约 1.5 GB）到 `Toolchain_Cache` Release。
+2. 之后的每次 **Build Releases** 会自动下载并解压该缓存；若 Release 缺失，则自动回退为全量编译。
+
 本地流程与 CI 一致：
 
 ```bash
@@ -216,8 +223,9 @@ My-OpenWrt-Firmware/
 ├── doc/zerowrt.webp                 # README 头图
 ├── scripts/                         # kmod 签名辅助
 ├── LICENSE                          # GPL-2.0
+├── CHANGELOG.md                     # 项目更新日志
 └── .github/
-    ├── workflows/                   # build-release.yml · 自托管 Runner
+    ├── workflows/                   # build-release.yml · toolchain-cache.yml · 清理
     ├── ISSUE_TEMPLATE/              # bug / 功能表单
     ├── PULL_REQUEST_TEMPLATE.md
     ├── dependabot.yml
