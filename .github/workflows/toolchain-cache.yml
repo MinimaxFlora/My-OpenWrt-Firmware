@@ -169,14 +169,8 @@ jobs:
         working-directory: ./openwrt
         run: |
           # 缓存文件名与 build-release.yml 的「🗃️ 下载工具链缓存」步骤保持一致
-          LIBC=musl
-          grep -q '^CONFIG_USE_GLIBC=y' .config && LIBC=glibc
-          toolchain_arch="x86_64"
-          grep -qE '^CONFIG_TARGET_(armvirt|armsr|rockchip)' .config && toolchain_arch="aarch64_generic"
-          gcc_version=$(sed -n 's/^CONFIG_GCC_USE_VERSION_\([0-9]*\)=y/\1/p' .config | head -n1)
-          gcc_version=${gcc_version:-15}
-
-          TOOLCHAIN_FILE="toolchain_${LIBC}_${toolchain_arch}_gcc-${gcc_version}.tar.zst"
+          # 仅支持 x86_64 + musl + GCC 15; 若调整 .config 的 libc/gcc 版本须同步修改此处
+          TOOLCHAIN_FILE="toolchain_musl_x86_64_gcc-15.tar.zst"
           echo "TOOLCHAIN_FILE=${TOOLCHAIN_FILE}" >> "$GITHUB_ENV"
           echo -e "\n\e[1;36m================================================================\e[0m"
           echo -e "\e[1;33m   🔨 生成工具链缓存: ${TOOLCHAIN_FILE} \e[0m"

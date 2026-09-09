@@ -322,14 +322,8 @@ jobs:
         working-directory: ./openwrt
         run: |
           # 缓存文件名须与 toolchain-cache.yml 中生成规则保持一致
-          LIBC=musl
-          grep -q '^CONFIG_USE_GLIBC=y' .config && LIBC=glibc
-          toolchain_arch="x86_64"
-          grep -qE '^CONFIG_TARGET_(armvirt|armsr|rockchip)' .config && toolchain_arch="aarch64_generic"
-          gcc_version=$(sed -n 's/^CONFIG_GCC_USE_VERSION_\([0-9]*\)=y/\1/p' .config | head -n1)
-          gcc_version=${gcc_version:-15}
-
-          TOOLCHAIN_FILE="toolchain_${LIBC}_${toolchain_arch}_gcc-${gcc_version}.tar.zst"
+          # 仅支持 x86_64 + musl + GCC 15(如需调整请同步修改 toolchain-cache.yml)
+          TOOLCHAIN_FILE="toolchain_musl_x86_64_gcc-15.tar.zst"
           # GitHub Actions 运行器位于 GitHub 网络内，直连下载无需代理
           TOOLCHAIN_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/Toolchain_Cache"
 
