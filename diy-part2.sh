@@ -215,6 +215,9 @@ sed -i '/profile\.d/d' package/utils/busybox/Makefile
 
 # --- Network & Time Sync ---
 log_info "配置网络与中国大陆 NTP 服务器..."
+# 修改默认 IP
+sed -i 's/192.168.1.1/10.0.0.1/g' package/base-files/files/bin/config_generate
+# 配置 DDNS 和 NTP
 sed -i '/boot()/,+2d' feeds/packages/net/ddns-scripts/files/etc/init.d/ddns
 sed -i 's/0.openwrt.pool.ntp.org/ntp1.aliyun.com/g' package/base-files/files/bin/config_generate
 sed -i 's/1.openwrt.pool.ntp.org/ntp2.aliyun.com/g' package/base-files/files/bin/config_generate
