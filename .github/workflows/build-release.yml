@@ -581,7 +581,7 @@ jobs:
       # 发布到 Releases
       # ========================================================
       - name: 🚀 发布到 Releases
-        uses: softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@v3.0.4
         with:
           tag_name: ${{ needs.build.outputs.release_tag }}
           name: ${{ needs.build.outputs.release_tag }}
@@ -604,7 +604,7 @@ jobs:
       # ========================================================
       - name: 🚀 发布内核驱动 (kmod) 到滚动 Tag (kmod-openwrt-25.12)
         if: hashFiles('firmware/*.tar.gz') != ''
-        uses: softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@v3.0.4
         with:
           tag_name: kmod-openwrt-25.12
           name: kmod-openwrt-25.12

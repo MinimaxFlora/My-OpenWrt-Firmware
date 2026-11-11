@@ -296,7 +296,7 @@ jobs:
       # 上传到 Release (滚动 Tag: Toolchain_Cache)
       # ==========================================================
       - name: 🚀 上传缓存到 Release (Toolchain_Cache)
-        uses: softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@v3.0.4
         with:
           tag_name: Toolchain_Cache
           name: 🧰 OpenWrt Toolchain Cache (openwrt-25.12)
